@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import capflowImg from './assets/capflow.png'
+import capflowImg from './assets/capflow-logo.png'
 import './App.css'
 
 function App() {
