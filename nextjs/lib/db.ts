@@ -1,4 +1,4 @@
-﻿import Dexie, { Table } from 'dexie';
+import Dexie, { Table } from 'dexie';
 
 export interface User {
   id?: number;
@@ -123,8 +123,23 @@ export const DEFAULT_CATEGORIES: Omit<Category, 'id'>[] = [
 ];
 
 export async function seedDefaultCategories(): Promise<void> {
-  const count = await db.categories.count();
-  if (count === 0) {
+  const all = await db.categories.toArray();
+  if (all.length === 0) {
     await db.categories.bulkAdd(DEFAULT_CATEGORIES);
+    return;
+  }
+  // Clean up any duplicate default categories by name
+  const seen = new Set<string>();
+  const dupIds: number[] = [];
+  for (const cat of all) {
+    const key = cat.name.trim().toLowerCase();
+    if (seen.has(key)) {
+      if (cat.id) dupIds.push(cat.id);
+    } else {
+      seen.add(key);
+    }
+  }
+  if (dupIds.length > 0) {
+    await db.categories.bulkDelete(dupIds);
   }
 }

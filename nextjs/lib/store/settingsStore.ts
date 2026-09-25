@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface SettingsState {
@@ -10,12 +10,19 @@ interface SettingsState {
   setSelectedMonth: (month: string) => void;
 }
 
+function getCurrentLocalMonth(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       defaultCurrency: 'INR',
       theme: 'system',
-      selectedMonth: new Date().toISOString().slice(0, 7),
+      selectedMonth: getCurrentLocalMonth(),
 
       setDefaultCurrency: (currency) => set({ defaultCurrency: currency }),
       setTheme: (theme) => set({ theme }),

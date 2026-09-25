@@ -1,49 +1,67 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Settings, Plus, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { format, addMonths, subMonths, parseISO } from "date-fns";
-import { useTransactionStore } from "@/lib/store/transactionStore";
-import { useSettingsStore } from "@/lib/store/settingsStore";
-import { db, seedDefaultCategories, Category } from "@/lib/db";
-import { TransactionRow } from "@/components/transaction/TransactionRow";
-import { WeeklyBarChart } from "@/components/shared/WeeklyBarChart";
-import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
-import { BalanceCard } from "@/components/shared/BalanceCard";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Settings,
+  Plus,
+  ArrowDownRight,
+  ArrowUpRight,
+  ReceiptText,
+  Sparkles,
+} from "lucide-react";
+import { format, addMonths, subMonths, parseISO } from "date-fns";
+import { motion, AnimatePresence } from "framer-motion";
+import { useTransactionStore } from "@/lib/store/transactionStore";
+import { useSettingsStore } from "@/lib/store/settingsStore";
+import { useCategoryStore } from "@/lib/store/categoryStore";
+import { BalanceCard } from "@/components/shared/BalanceCard";
+import { WeeklyBarChart } from "@/components/shared/WeeklyBarChart";
+import { TransactionRow } from "@/components/transaction/TransactionRow";
+import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
 
 export default function DashboardPage() {
-  const { loadTransactions, transactions, loading, recent, totalIncome, totalExpense, netSavings, weeklyTotals } = useTransactionStore();
-  const { selectedMonth, setSelectedMonth, defaultCurrency } = useSettingsStore();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const {
+    transactions,
+    loading,
+    loadTransactions,
+    totalIncome,
+    totalExpense,
+    netSavings,
+    recent,
+    weeklyTotals,
+  } = useTransactionStore();
+
+  const { defaultCurrency, selectedMonth, setSelectedMonth } = useSettingsStore();
+  const { categories, loadCategories } = useCategoryStore();
+
+  const [fabOpen, setFabOpen] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [addType, setAddType] = useState<"expense" | "income">("expense");
-  const [fabOpen, setFabOpen] = useState(false);
 
-  const currentDate = parseISO(`${selectedMonth}-01`);
+  const currentDate = useMemo(() => parseISO(`${selectedMonth}-01`), [selectedMonth]);
 
   useEffect(() => {
-    seedDefaultCategories().then(() => {
-      db.categories.orderBy("order").toArray().then(setCategories);
-    });
+    loadCategories();
     loadTransactions(selectedMonth);
-  }, [selectedMonth, loadTransactions]);
+  }, [selectedMonth, loadCategories, loadTransactions]);
+
+  const income = totalIncome();
+  const expense = totalExpense();
+  const savings = netSavings();
+  const recentTxs = recent();
+  const weekly = weeklyTotals();
+  const spentPercent = income > 0 ? Math.min(Math.round((expense / income) * 100), 100) : 0;
 
   const navigateMonth = (dir: "prev" | "next") => {
     const newDate = dir === "prev" ? subMonths(currentDate, 1) : addMonths(currentDate, 1);
     setSelectedMonth(format(newDate, "yyyy-MM"));
   };
 
-  const income = totalIncome();
-  const expense = totalExpense();
-  const savings = netSavings();
-  const spentPercent = income > 0 ? Math.min((expense / income) * 100, 100) : 0;
-  const recentTxs = recent();
-  const weekly = weeklyTotals();
-
-  const openAdd = (type: "expense" | "income") => {
+  const handleOpenAdd = (type: "expense" | "income") => {
     setAddType(type);
     setFabOpen(false);
     setShowAddSheet(true);
@@ -54,51 +72,68 @@ export default function DashboardPage() {
       {/* ── Sticky Header ── */}
       <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)]">
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl overflow-hidden flex-shrink-0 bg-white/5 border border-[var(--border-color)] flex items-center justify-center p-0.5">
               <Image
                 src="/capflow-logo.png"
                 alt="CapFlow"
-                width={32}
-                height={32}
+                width={28}
+                height={28}
                 className="w-full h-full object-contain"
               />
             </div>
             <div>
-              <p className="text-xs text-[var(--text-secondary)]">Good day 👋</p>
-              <h1 className="text-lg font-bold text-[var(--text-primary)] leading-none">CapFlow</h1>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs text-[var(--text-secondary)] font-medium">CapFlow</p>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+              </div>
+              <h1 className="text-base font-bold text-[var(--text-primary)] leading-tight">Overview</h1>
             </div>
           </div>
-          <Link href="/settings" aria-label="Settings">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center">
-              <Settings size={16} className="text-white" />
-            </div>
-          </Link>
+
+          <div className="flex items-center gap-2">
+            {/* Quick Add Button in Header */}
+            <button
+              onClick={() => handleOpenAdd("expense")}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#6366F1] text-white text-xs font-semibold hover:bg-[#5558E6] transition-colors shadow-sm"
+              aria-label="Add transaction"
+            >
+              <Plus size={15} strokeWidth={2.5} />
+              <span>Add</span>
+            </button>
+
+            {/* Settings Link */}
+            <Link href="/settings" aria-label="Settings">
+              <div className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center hover:bg-[var(--bg-card-hover)] transition-colors">
+                <Settings size={15} className="text-[var(--text-secondary)]" />
+              </div>
+            </Link>
+          </div>
         </div>
 
         {/* Month selector */}
-        <div className="flex items-center justify-center gap-4 pb-3 px-4">
+        <div className="flex items-center justify-center gap-3 pb-3 px-4">
           <button
             onClick={() => navigateMonth("prev")}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-card)] transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--bg-card)] transition-colors"
             aria-label="Previous month"
           >
-            <ChevronLeft size={18} className="text-[var(--text-secondary)]" />
+            <ChevronLeft size={16} className="text-[var(--text-secondary)]" />
           </button>
-          <span className="text-sm font-semibold text-[var(--text-primary)] min-w-[140px] text-center">
+          <span className="text-sm font-semibold text-[var(--text-primary)] min-w-[130px] text-center">
             {format(currentDate, "MMMM yyyy")}
           </span>
           <button
             onClick={() => navigateMonth("next")}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg-card)] transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg border border-[var(--border-color)] hover:bg-[var(--bg-card)] transition-colors"
             aria-label="Next month"
           >
-            <ChevronRight size={18} className="text-[var(--text-secondary)]" />
+            <ChevronRight size={16} className="text-[var(--text-secondary)]" />
           </button>
         </div>
       </header>
 
-      <div className="px-4 pb-4 space-y-4">
+      <div className="px-4 pb-20 pt-3 space-y-4">
         {/* Balance Overview Card */}
         <BalanceCard
           income={income}
@@ -109,11 +144,32 @@ export default function DashboardPage() {
           loading={loading}
         />
 
+        {/* Quick Action Shortcuts */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            onClick={() => handleOpenAdd("expense")}
+            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/20 hover:bg-[#EF4444]/15 transition-all text-xs font-semibold text-[#EF4444]"
+          >
+            <ArrowDownRight size={15} />
+            <span>Add Expense</span>
+          </button>
+          <button
+            onClick={() => handleOpenAdd("income")}
+            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#10B981]/10 border border-[#10B981]/20 hover:bg-[#10B981]/15 transition-all text-xs font-semibold text-[#10B981]"
+          >
+            <ArrowUpRight size={15} />
+            <span>Add Income</span>
+          </button>
+        </div>
+
         {/* Weekly Bar Chart */}
         <div className="bg-[var(--bg-card)] rounded-2xl p-4 border border-[var(--border-color)]">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Weekly Spending</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Weekly Spending</h2>
+            <span className="text-xs text-[var(--text-secondary)]">Last 7 days</span>
+          </div>
           {loading ? (
-            <div className="h-24 skeleton" />
+            <div className="h-24 skeleton rounded-xl" />
           ) : (
             <WeeklyBarChart data={weekly} currency={defaultCurrency} />
           )}
@@ -123,24 +179,33 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent Transactions</h2>
-            <Link href="/transactions" className="text-xs text-[#6366F1] font-medium">
-              See All →
+            <Link href="/calendar" className="text-xs text-[#6366F1] font-semibold hover:underline">
+              View Calendar →
             </Link>
           </div>
 
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 skeleton rounded-xl" />
               ))}
             </div>
           ) : recentTxs.length === 0 ? (
-            <div className="bg-[var(--bg-card)] rounded-2xl p-8 text-center border border-[var(--border-color)]">
-              <p className="text-4xl mb-3">💸</p>
+            <div className="bg-[var(--bg-card)] rounded-2xl p-7 text-center border border-[var(--border-color)]">
+              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mx-auto mb-3 text-[var(--text-secondary)]">
+                <ReceiptText size={24} className="opacity-50" />
+              </div>
               <p className="text-sm font-semibold text-[var(--text-primary)]">No transactions yet</p>
-              <p className="text-xs text-[var(--text-secondary)] mt-1">
-                Tap the + button to add your first transaction
+              <p className="text-xs text-[var(--text-secondary)] mt-1 mb-4">
+                Start tracking by recording your first transaction.
               </p>
+              <button
+                onClick={() => handleOpenAdd("expense")}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-semibold hover:bg-[#5558E6] transition-colors shadow-sm"
+              >
+                <Plus size={14} />
+                <span>Add Transaction</span>
+              </button>
             </div>
           ) : (
             <div className="space-y-2">
@@ -161,7 +226,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* FAB */}
+      {/* ── Position-fixed FAB (Guaranteed inside app shell, clear from bottom nav) ── */}
       <AnimatePresence>
         {fabOpen && (
           <>
@@ -169,28 +234,32 @@ export default function DashboardPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/30 z-40"
+              className="fixed inset-0 bg-black/50 z-[65] backdrop-blur-[2px]"
               onClick={() => setFabOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.9 }}
+              initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.9 }}
-              className="fixed bottom-24 right-4 flex flex-col gap-2 z-50"
+              exit={{ opacity: 0, y: 15, scale: 0.95 }}
+              className="fixed flex flex-col gap-2 z-[70]"
+              style={{
+                bottom: "calc(var(--bottom-nav-h) + 84px)",
+                right: "max(20px, calc((100vw - 480px) / 2 + 20px))",
+              }}
             >
               <button
-                onClick={() => openAdd("income")}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#10B981] text-white rounded-2xl font-semibold text-sm shadow-lg"
+                onClick={() => handleOpenAdd("expense")}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#EF4444] text-white text-xs font-bold shadow-xl hover:bg-[#DC2626] transition-transform active:scale-95"
               >
-                <TrendingUp size={16} />
-                Add Income
+                <ArrowDownRight size={15} />
+                <span>Expense</span>
               </button>
               <button
-                onClick={() => openAdd("expense")}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#EF4444] text-white rounded-2xl font-semibold text-sm shadow-lg"
+                onClick={() => handleOpenAdd("income")}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#10B981] text-white text-xs font-bold shadow-xl hover:bg-[#059669] transition-transform active:scale-95"
               >
-                <TrendingDown size={16} />
-                Add Expense
+                <ArrowUpRight size={15} />
+                <span>Income</span>
               </button>
             </motion.div>
           </>
@@ -200,11 +269,17 @@ export default function DashboardPage() {
       <motion.button
         whileTap={{ scale: 0.92 }}
         onClick={() => setFabOpen((o) => !o)}
-        className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] right-4 w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 z-50"
+        className="fixed w-13 h-13 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-lg shadow-indigo-500/30 z-[70] text-white"
+        style={{
+          width: "52px",
+          height: "52px",
+          bottom: "calc(var(--bottom-nav-h) + 20px)",
+          right: "max(20px, calc((100vw - 480px) / 2 + 20px))",
+        }}
         aria-label="Add transaction"
       >
         <motion.div animate={{ rotate: fabOpen ? 45 : 0 }} transition={{ duration: 0.2 }}>
-          <Plus size={24} className="text-white" strokeWidth={2.5} />
+          <Plus size={22} className="text-white" strokeWidth={2.5} />
         </motion.div>
       </motion.button>
 

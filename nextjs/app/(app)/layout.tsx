@@ -1,19 +1,36 @@
-﻿"use client";
+"use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart2, Target, CreditCard, Settings } from "lucide-react";
+import { Home, BarChart2, CalendarDays, Target, Settings } from "lucide-react";
+import { useCategoryStore } from "@/lib/store/categoryStore";
+import { useTransactionStore } from "@/lib/store/transactionStore";
+import { useBudgetStore } from "@/lib/store/budgetStore";
+import { useSettingsStore } from "@/lib/store/settingsStore";
 
 const NAV_ITEMS = [
-  { href: "/dashboard",   icon: Home,       label: "Home" },
-  { href: "/analytics",   icon: BarChart2,  label: "Analytics" },
-  { href: "/budgets",     icon: Target,     label: "Budgets" },
-  { href: "/emis",        icon: CreditCard, label: "EMI" },
-  { href: "/settings",    icon: Settings,   label: "Settings" },
+  { href: "/dashboard",   icon: Home,          label: "Home" },
+  { href: "/analytics",   icon: BarChart2,     label: "Analytics" },
+  { href: "/calendar",    icon: CalendarDays,  label: "Calendar" },
+  { href: "/budgets",     icon: Target,        label: "Budgets" },
+  { href: "/settings",    icon: Settings,      label: "Settings" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { loadCategories } = useCategoryStore();
+  const { loadTransactions } = useTransactionStore();
+  const { loadBudgets, loadGoals } = useBudgetStore();
+  const { selectedMonth } = useSettingsStore();
+
+  useEffect(() => {
+    // Warm up stores in the background on startup
+    loadCategories();
+    loadTransactions(selectedMonth);
+    loadBudgets(selectedMonth);
+    loadGoals();
+  }, [loadCategories, loadTransactions, loadBudgets, loadGoals, selectedMonth]);
 
   return (
     <div className="app-shell flex flex-col bg-[var(--bg-primary)]">

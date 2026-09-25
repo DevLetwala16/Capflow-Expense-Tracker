@@ -1,112 +1,118 @@
-﻿"use client";
+"use client";
 
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
 };
 
-function formatAmount(amount: number, currency: string): string {
+function formatAmount(amount: number = 0, currency: string = "INR"): string {
   const symbol = CURRENCY_SYMBOLS[currency] || currency + " ";
-  if (amount >= 100000) return symbol + (amount / 100000).toFixed(1) + "L";
-  if (amount >= 1000) return symbol + (amount / 1000).toFixed(1) + "K";
-  return symbol + amount.toLocaleString("en-IN");
+  const val = Number.isFinite(amount) ? amount : 0;
+  const abs = Math.abs(val);
+
+  if (abs >= 100000) return symbol + (val / 100000).toFixed(1) + "L";
+  if (abs >= 1000) return symbol + (val / 1000).toFixed(1) + "K";
+  return symbol + val.toLocaleString("en-IN");
 }
 
 interface BalanceCardProps {
-  income: number;
-  expense: number;
-  savings: number;
-  spentPercent: number;
-  currency: string;
+  income?: number;
+  expense?: number;
+  savings?: number;
+  spentPercent?: number;
+  currency?: string;
   loading?: boolean;
 }
 
-export function BalanceCard({ income, expense, savings, spentPercent, currency, loading }: BalanceCardProps) {
-  if (loading) {
-    return <div className="h-40 skeleton rounded-2xl" />;
-  }
-
-  const progressColor =
-    spentPercent > 90 ? "#EF4444" :
-    spentPercent > 70 ? "#F59E0B" :
-    "#10B981";
+export function BalanceCard({
+  income = 0,
+  expense = 0,
+  savings = 0,
+  spentPercent = 0,
+  currency = "INR",
+  loading = false,
+}: BalanceCardProps) {
+  const safeSpent = Math.max(0, Math.min(100, Number.isFinite(spentPercent) ? spentPercent : 0));
+  const safeIncome = Number.isFinite(income) ? income : 0;
+  const safeExpense = Number.isFinite(expense) ? expense : 0;
+  const safeSavings = Number.isFinite(savings) ? savings : safeIncome - safeExpense;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl p-5 bg-gradient-to-br from-[#6366F1] to-[#38bdf8] shadow-xl shadow-indigo-500/20 overflow-hidden relative"
+    <div
+      className="rounded-2xl p-5 bg-gradient-to-br from-[#6366F1] to-[#38bdf8] shadow-xl shadow-indigo-500/25 overflow-hidden relative text-white"
     >
-      {/* Background decoration */}
-      <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/5" />
-      <div className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full bg-white/5" />
+      {/* Background ambient decoration */}
+      <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10 blur-xl pointer-events-none" />
+      <div className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full bg-black/10 blur-lg pointer-events-none" />
 
-      {/* Stats row */}
+      {/* 3-Column Stats Row */}
       <div className="grid grid-cols-3 gap-2 mb-4 relative z-10">
+        {/* Income */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
-            <TrendingUp size={12} className="text-white/70" />
-            <span className="text-[10px] text-white/70 font-medium">Income</span>
+            <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
+              <TrendingUp size={10} className="text-white" />
+            </div>
+            <span className="text-[10px] text-white/80 font-medium tracking-wide">Income</span>
           </div>
-          <motion.p
-            key={income}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-base font-bold text-white"
-          >
-            {formatAmount(income, currency)}
-          </motion.p>
+          <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
+            {formatAmount(safeIncome, currency)}
+          </p>
         </div>
 
-        <div className="text-center border-x border-white/20">
+        {/* Expense */}
+        <div className="text-center border-x border-white/20 px-1">
           <div className="flex items-center justify-center gap-1 mb-1">
-            <TrendingDown size={12} className="text-white/70" />
-            <span className="text-[10px] text-white/70 font-medium">Expense</span>
+            <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
+              <TrendingDown size={10} className="text-white" />
+            </div>
+            <span className="text-[10px] text-white/80 font-medium tracking-wide">Expense</span>
           </div>
-          <motion.p
-            key={expense}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-base font-bold text-white"
-          >
-            {formatAmount(expense, currency)}
-          </motion.p>
+          <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
+            {formatAmount(safeExpense, currency)}
+          </p>
         </div>
 
+        {/* Net */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
-            <Minus size={12} className="text-white/70" />
-            <span className="text-[10px] text-white/70 font-medium">Net</span>
+            <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
+              <Wallet size={10} className="text-white" />
+            </div>
+            <span className="text-[10px] text-white/80 font-medium tracking-wide">Net</span>
           </div>
-          <motion.p
-            key={savings}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className={`text-base font-bold ${savings >= 0 ? "text-white" : "text-red-200"}`}
+          <p
+            className={`text-base font-bold transition-opacity ${
+              safeSavings >= 0 ? "text-white" : "text-rose-200"
+            } ${loading ? "opacity-60" : "opacity-100"}`}
           >
-            {formatAmount(savings, currency)}
-          </motion.p>
+            {safeSavings >= 0 ? "" : "-"}{formatAmount(Math.abs(safeSavings), currency)}
+          </p>
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress Bar Section */}
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-1.5">
-          <span className="text-[10px] text-white/70">Spent</span>
-          <span className="text-[10px] text-white/70 font-semibold">{Math.round(spentPercent)}%</span>
+          <span className="text-[10px] text-white/80 font-medium">Spent of Income</span>
+          <span className="text-[10px] text-white font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+            {Math.round(safeSpent)}%
+          </span>
         </div>
-        <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+        <div className="h-2 bg-black/20 rounded-full overflow-hidden p-0.5">
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: `${spentPercent}%` }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
+            animate={{ width: `${safeSpent}%` }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
             className="h-full rounded-full"
-            style={{ backgroundColor: spentPercent > 90 ? "#FCA5A5" : "rgba(255,255,255,0.85)" }}
+            style={{
+              backgroundColor: safeSpent > 90 ? "#FDA4AF" : safeSpent > 70 ? "#FDE047" : "#FFFFFF",
+            }}
           />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
