@@ -8,6 +8,7 @@ import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useBudgetStore } from "@/lib/store/budgetStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
+import { useAuthStore } from "@/lib/store/authStore";
 
 const NAV_ITEMS = [
   { href: "/dashboard",   icon: Home,          label: "Home" },
@@ -23,6 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { loadTransactions } = useTransactionStore();
   const { loadBudgets, loadGoals } = useBudgetStore();
   const { selectedMonth } = useSettingsStore();
+  const { user, setUser } = useAuthStore();
 
   useEffect(() => {
     // Warm up stores in the background on startup
@@ -30,7 +32,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     loadTransactions(selectedMonth);
     loadBudgets(selectedMonth);
     loadGoals();
-  }, [loadCategories, loadTransactions, loadBudgets, loadGoals, selectedMonth]);
+
+    // Recover user session if cookie exists but client state is empty
+    if (!user) {
+      fetch("/api/me")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.user) setUser(data.user);
+        })
+        .catch(() => {});
+    }
+  }, [loadCategories, loadTransactions, loadBudgets, loadGoals, selectedMonth, user, setUser]);
 
   return (
     <div className="app-shell flex flex-col bg-[var(--bg-primary)]">
