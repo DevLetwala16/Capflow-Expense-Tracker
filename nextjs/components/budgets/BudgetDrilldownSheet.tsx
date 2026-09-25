@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { Transaction, Category } from "@/lib/db";
 import { db } from "@/lib/db";
+import { useAuthStore } from "@/lib/store/authStore";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -31,11 +32,12 @@ export function BudgetDrilldownSheet({
   categories,
   currency,
 }: BudgetDrilldownSheetProps) {
+  const { user } = useAuthStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
 
   useEffect(() => {
-    if (!open || !budget) return;
+    if (!open || !budget || !user?.id) return;
 
     const [y, m] = budget.month.split("-").map(Number);
     const startDate = `${budget.month}-01`;
@@ -43,18 +45,15 @@ export function BudgetDrilldownSheet({
     const endDate = `${budget.month}-${String(lastDay).padStart(2, "0")}`;
 
     db.transactions
-      .where("[categoryId+date]")
-      .between(
-        [budget.categoryId, startDate],
-        [budget.categoryId, endDate],
-        true,
-        true
-      )
-      .filter((tx) => tx.type === "expense")
-      .reverse()
+      .where("[userId+categoryId]")
+      .equals([user.id, budget.categoryId])
+      .filter((tx) => tx.type === "expense" && tx.date >= startDate && tx.date <= endDate)
       .toArray()
-      .then(setTransactions);
-  }, [open, budget]);
+      .then((txs) => {
+        txs.sort((a, b) => (b.date > a.date ? 1 : -1));
+        setTransactions(txs);
+      });
+  }, [open, budget, user?.id]);
 
   if (!budget) return null;
 

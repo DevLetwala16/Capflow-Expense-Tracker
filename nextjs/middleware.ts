@@ -16,6 +16,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // /onboarding is a special post-login welcome page — always allow through
+  if (pathname.startsWith("/onboarding")) {
+    return NextResponse.next();
+  }
+
   const isAuthPage =
     pathname.startsWith("/auth") || pathname.startsWith("/splash");
 

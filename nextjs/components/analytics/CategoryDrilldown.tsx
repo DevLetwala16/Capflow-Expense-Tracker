@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { Transaction, Category } from "@/lib/db";
 import { db } from "@/lib/db";
+import { useAuthStore } from "@/lib/store/authStore";
+import { useCategoryStore } from "@/lib/store/categoryStore";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -36,26 +38,23 @@ export function CategoryDrilldown({
   startDate,
   endDate,
 }: CategoryDrilldownProps) {
+  const { user } = useAuthStore();
+  const { categories } = useCategoryStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
 
   useEffect(() => {
-    if (!open || !slice) return;
-    db.categories.toArray().then(setCategories);
+    if (!open || !slice || !user?.id) return;
     db.transactions
-      .where("[categoryId+date]")
-      .between(
-        [slice.categoryId, startDate],
-        [slice.categoryId, endDate],
-        true,
-        true
-      )
-      .filter((tx) => tx.type === "expense")
-      .reverse()
+      .where("[userId+categoryId]")
+      .equals([user.id, slice.categoryId])
+      .filter((tx) => tx.type === "expense" && tx.date >= startDate && tx.date <= endDate)
       .toArray()
-      .then(setTransactions);
-  }, [open, slice, startDate, endDate]);
+      .then((txs) => {
+        txs.sort((a, b) => (b.date > a.date ? 1 : -1));
+        setTransactions(txs);
+      });
+  }, [open, slice, startDate, endDate, user?.id]);
 
   return (
     <AnimatePresence>

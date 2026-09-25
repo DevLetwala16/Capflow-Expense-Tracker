@@ -1,19 +1,33 @@
-﻿"use client";
+"use client";
+
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import { db } from "@/lib/db";
+import { useAuthStore } from "@/lib/store/authStore";
 
 export default function ExportPage() {
   const router = useRouter();
+  const { user } = useAuthStore();
 
   const exportJSON = async () => {
-    const transactions = await db.transactions.toArray();
-    const categories = await db.categories.toArray();
-    const budgets = await db.budgets.toArray();
-    const goals = await db.goals.toArray();
-    const emis = await db.emis.toArray();
+    if (!user?.id) return;
+    const userId = user.id;
+    const transactions = await db.transactions.where("userId").equals(userId).toArray();
+    const categories = await db.categories.where("userId").equals(userId).toArray();
+    const budgets = await db.budgets.where("userId").equals(userId).toArray();
+    const goals = await db.goals.where("userId").equals(userId).toArray();
+    const emis = await db.emis.where("userId").equals(userId).toArray();
 
-    const data = { transactions, categories, budgets, goals, emis, exportedAt: new Date().toISOString() };
+    const data = {
+      userId,
+      userEmail: user.email,
+      transactions,
+      categories,
+      budgets,
+      goals,
+      emis,
+      exportedAt: new Date().toISOString()
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

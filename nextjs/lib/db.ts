@@ -18,6 +18,7 @@ export interface User {
 
 export interface Category {
   id?: number;
+  userId: string;
   name: string;
   icon: string;
   color: string;
@@ -29,6 +30,7 @@ export interface Category {
 
 export interface Transaction {
   id?: number;
+  userId: string;
   type: 'expense' | 'income';
   amount: number;
   currency: string;
@@ -50,6 +52,7 @@ export interface Transaction {
 
 export interface Budget {
   id?: number;
+  userId: string;
   categoryId: number;
   month: string;
   limit: number;
@@ -59,6 +62,7 @@ export interface Budget {
 
 export interface Goal {
   id?: number;
+  userId: string;
   name: string;
   targetAmount: number;
   savedAmount: number;
@@ -72,6 +76,7 @@ export interface Goal {
 
 export interface EMI {
   id?: number;
+  userId: string;
   name: string;
   totalCost: number;
   monthlyCost: number;
@@ -96,6 +101,7 @@ export class ExpenseTrackerDB extends Dexie {
 
   constructor() {
     super('ExpenseTrackerDB');
+    // Version 1 — original schema (kept for Dexie migration chain)
     this.version(1).stores({
       users:        '++id, email',
       categories:   '++id, order, type',
@@ -104,12 +110,21 @@ export class ExpenseTrackerDB extends Dexie {
       goals:        '++id, targetDate',
       emis:         '++id, dueDay, name',
     });
+    // Version 2 — userId added to all data tables for per-user data isolation
+    this.version(2).stores({
+      users:        '++id, email',
+      categories:   '++id, userId, [userId+order], [userId+type]',
+      transactions: '++id, userId, [userId+date], [userId+categoryId], [userId+type], [userId+paymentMethod]',
+      budgets:      '++id, userId, [userId+categoryId+month], [userId+month]',
+      goals:        '++id, userId, [userId+targetDate]',
+      emis:         '++id, userId, [userId+dueDay]',
+    });
   }
 }
 
 export const db = new ExpenseTrackerDB();
 
-export const DEFAULT_CATEGORIES: Omit<Category, 'id'>[] = [
+export const DEFAULT_CATEGORIES: Omit<Category, 'id' | 'userId'>[] = [
   { name: 'Food',          icon: 'utensils',        color: '#F97316', type: 'expense', order: 1,  isDefault: true, createdAt: new Date().toISOString() },
   { name: 'Rent',          icon: 'home',            color: '#6366F1', type: 'expense', order: 2,  isDefault: true, createdAt: new Date().toISOString() },
   { name: 'Travel',        icon: 'plane',           color: '#0EA5E9', type: 'expense', order: 3,  isDefault: true, createdAt: new Date().toISOString() },
@@ -122,13 +137,15 @@ export const DEFAULT_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Other',         icon: 'circle-ellipsis', color: '#94A3B8', type: 'both',    order: 10, isDefault: true, createdAt: new Date().toISOString() },
 ];
 
-export async function seedDefaultCategories(): Promise<void> {
-  const all = await db.categories.toArray();
+export async function seedDefaultCategories(userId: string): Promise<void> {
+  const all = await db.categories.where('userId').equals(userId).toArray();
   if (all.length === 0) {
-    await db.categories.bulkAdd(DEFAULT_CATEGORIES);
+    await db.categories.bulkAdd(
+      DEFAULT_CATEGORIES.map((c) => ({ ...c, userId }))
+    );
     return;
   }
-  // Clean up any duplicate default categories by name
+  // Clean up any duplicate default categories by name for this user
   const seen = new Set<string>();
   const dupIds: number[] = [];
   for (const cat of all) {
@@ -143,3 +160,4 @@ export async function seedDefaultCategories(): Promise<void> {
     await db.categories.bulkDelete(dupIds);
   }
 }
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   PieChart,
@@ -25,7 +25,6 @@ import {
   PieChart as PieChartIcon,
   Sparkles,
 } from "lucide-react";
-import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useAnalytics, AnalyticsPeriod } from "@/hooks/useAnalytics";
@@ -100,14 +99,8 @@ export default function AnalyticsPage() {
   const [drilldownSlice, setDrilldownSlice] = useState<DonutSlice | null>(null);
 
   const { defaultCurrency, selectedMonth } = useSettingsStore();
-  const { loadTransactions } = useTransactionStore();
-  const { categories, loadCategories } = useCategoryStore();
+  const { categories } = useCategoryStore();
   const symbol = CURRENCY_SYMBOLS[defaultCurrency] || defaultCurrency;
-
-  useEffect(() => {
-    loadCategories();
-    loadTransactions(selectedMonth);
-  }, [selectedMonth, loadCategories, loadTransactions]);
 
   const { donut, stackedBar, lineTrend, insights, loading } = useAnalytics(
     period,
@@ -183,10 +176,9 @@ export default function AnalyticsPage() {
         <h1 className="text-lg font-bold text-[var(--text-primary)]">Analytics & Insights</h1>
       </header>
 
-      <div className="px-4 pb-8 space-y-5 pt-4">
-
-        {/* ── Period filter ── */}
-        <div className="flex gap-2">
+      <div className="px-4 pb-8 space-y-5 pt-4 md:pt-6">
+        {/* ── Period filter (Exact same buttons) ── */}
+        <div className="flex gap-2 max-w-md">
           {(Object.keys(PERIOD_LABELS) as AnalyticsPeriod[]).map((p) => (
             <button
               key={p}
@@ -202,15 +194,15 @@ export default function AnalyticsPage() {
           ))}
         </div>
 
-        {/* ── Insight Strip ── */}
+        {/* ── Insight Strip (Exact same cards and icons) ── */}
         {loading ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-16 skeleton rounded-2xl" />
             ))}
           </div>
         ) : insights.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {insights.map((item, i) => (
               <motion.div
                 key={item.id}
@@ -228,167 +220,184 @@ export default function AnalyticsPage() {
           </div>
         ) : null}
 
-        {/* ── Donut Chart ── */}
-        <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Spending by Category</h2>
-          {loading ? (
-            <div className="h-48 skeleton rounded-xl" />
-          ) : donut.length === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
-              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mb-2 text-[var(--text-secondary)]">
-                <PieChartIcon size={24} className="opacity-40" />
+        {/* ── Visualizations (Device-aware: 1 col on mobile, 2 cols on laptop) ── */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+          {/* ── Donut Chart (Exact same component, fonts, and graph) ── */}
+          <div className="md:col-span-5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Spending by Category</h2>
+            {loading ? (
+              <div className="h-48 skeleton rounded-xl" />
+            ) : donut.length === 0 ? (
+              <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
+                <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mb-2 text-[var(--text-secondary)]">
+                  <PieChartIcon size={24} className="opacity-40" />
+                </div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">No expense data</p>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">No entries for this period</p>
               </div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">No expense data</p>
-              <p className="text-xs text-[var(--text-secondary)] mt-0.5">No entries for this period</p>
-            </div>
-          ) : (
-            <>
-              <div className="relative">
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={donut}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={90}
-                      paddingAngle={3}
-                      dataKey="amount"
-                      isAnimationActive
-                      animationBegin={0}
-                      animationDuration={600}
-                      onClick={(data) => setDrilldownSlice(data as unknown as DonutSlice)}
-                      cursor="pointer"
+            ) : (
+              <>
+                <div className="relative w-full h-[220px]">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={donut}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={90}
+                        paddingAngle={donut.length > 1 ? 3 : 0}
+                        dataKey="amount"
+                        nameKey="name"
+                        isAnimationActive
+                        animationBegin={0}
+                        animationDuration={600}
+                        onClick={(data) => setDrilldownSlice(data as unknown as DonutSlice)}
+                        cursor="pointer"
+                      >
+                        {donut.map((slice, i) => (
+                          <Cell key={`cell-${i}`} fill={slice.color} stroke="transparent" />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: any) => [val != null ? `${symbol}${Number(val).toLocaleString()}` : "", "Amount"]}
+                        contentStyle={{
+                          backgroundColor: "var(--bg-card)",
+                          borderColor: "var(--border-color)",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          color: "var(--text-primary)",
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  {/* Center label */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <p className="text-[11px] font-medium text-[var(--text-secondary)]">Total</p>
+                    <p className="text-base font-bold text-[var(--text-primary)]">
+                      {symbol}{donut.reduce((s, d) => s + d.amount, 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Legend list (tap to drill down) */}
+                <div className="mt-3 space-y-1.5">
+                  {donut.slice(0, 6).map((slice) => (
+                    <button
+                      key={slice.categoryId}
+                      onClick={() => setDrilldownSlice(slice)}
+                      className="w-full flex items-center gap-2 text-left hover:bg-[var(--bg-card-hover)] rounded-xl px-2 py-1.5 transition-colors"
                     >
-                      {donut.map((slice, i) => (
-                        <Cell key={i} fill={slice.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center label */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <p className="text-xs text-[var(--text-secondary)]">Total</p>
-                  <p className="text-lg font-bold text-[var(--text-primary)]">
-                    {symbol}{donut.reduce((s, d) => s + d.amount, 0).toLocaleString()}
-                  </p>
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: slice.color }} />
+                      <span className="text-xs text-[var(--text-primary)] font-medium flex-1 truncate">{slice.name}</span>
+                      <span className="text-xs text-[var(--text-secondary)] font-semibold">{slice.percent}%</span>
+                      <span className="text-xs font-semibold text-[var(--text-primary)]">{symbol}{slice.amount.toLocaleString()}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Right Column on Laptop: Monthly Stacked Bar Chart & Daily Trend Line Chart */}
+          <div className="md:col-span-7 space-y-5">
+            {/* ── Monthly Spending Stacked Bar Chart (Exact same graph, buttons, and fonts) ── */}
+            <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Monthly Spending</h2>
+                <div className="flex gap-1">
+                  {(["category", "paymentMethod"] as const).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setGroupBy(g)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+                        groupBy === g
+                          ? "bg-[#6366F1] text-white"
+                          : "bg-[var(--bg-primary)] text-[var(--text-secondary)]"
+                      }`}
+                    >
+                      {g === "category" ? "Category" : "Payment"}
+                    </button>
+                  ))}
                 </div>
               </div>
-              {/* Legend */}
-              <div className="space-y-2 mt-2">
-                {donut.slice(0, 6).map((slice) => (
-                  <button
-                    key={slice.categoryId}
-                    onClick={() => setDrilldownSlice(slice)}
-                    className="w-full flex items-center gap-2 text-left hover:bg-[var(--bg-card-hover)] rounded-xl px-2 py-1.5 transition-colors"
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: slice.color }} />
-                    <span className="flex-1 text-xs text-[var(--text-primary)] truncate">{slice.name}</span>
-                    <span className="text-xs text-[var(--text-secondary)]">{slice.percent}%</span>
-                    <span className="text-xs font-semibold text-[var(--text-primary)]">
-                      {symbol}{slice.amount.toLocaleString()}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+              {loading ? (
+                <div className="h-48 skeleton rounded-xl" />
+              ) : totalMonthlySpend === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
+                  <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mb-2 text-[var(--text-secondary)]">
+                    <BarChart2 size={24} className="opacity-40" />
+                  </div>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">No spending recorded</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">Add an expense to view your 6-month trend</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stackedBar} barSize={18}>
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} axisLine={false} tickLine={false} />
+                    <YAxis hide />
+                    <Tooltip content={<CustomBarTooltip symbol={symbol} />} />
+                    {stackedKeys.map((key) => (
+                      <Bar key={key} dataKey={key} stackId="a" fill={getStackColor(key)} radius={[2, 2, 0, 0]} isAnimationActive />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
 
-        {/* ── Stacked Bar Chart ── */}
-        <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Monthly Spending</h2>
-            <div className="flex gap-1">
-              {(["category", "paymentMethod"] as const).map((g) => (
-                <button
-                  key={g}
-                  onClick={() => setGroupBy(g)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all ${
-                    groupBy === g
-                      ? "bg-[#6366F1] text-white"
-                      : "bg-[var(--bg-primary)] text-[var(--text-secondary)]"
-                  }`}
-                >
-                  {g === "category" ? "Category" : "Payment"}
-                </button>
-              ))}
+            {/* ── Daily Trend Line Chart (Exact same graph, fonts, lines) ── */}
+            <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Daily Spend Trend</h2>
+              {loading ? (
+                <div className="h-48 skeleton rounded-xl" />
+              ) : lineTrend.length === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
+                  <p className="text-sm">No data for this period</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={lineTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 9, fill: "var(--text-secondary)" }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={Math.max(0, Math.floor(lineTrend.length / 6) - 1)}
+                    />
+                    <YAxis hide />
+                    <Tooltip content={<CustomLineTooltip symbol={symbol} />} />
+                    <Line
+                      type="monotone"
+                      dataKey="amount"
+                      name="Daily"
+                      stroke="#6366F1"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive
+                      animationDuration={600}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="rolling7"
+                      name="7-day avg"
+                      stroke="#F59E0B"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 2"
+                      dot={false}
+                      isAnimationActive
+                      animationDuration={600}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: "10px", paddingTop: "8px" }}
+                      formatter={(value) => <span style={{ color: "var(--text-secondary)" }}>{value}</span>}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
-          {loading ? (
-            <div className="h-48 skeleton rounded-xl" />
-          ) : totalMonthlySpend === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
-              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mb-2 text-[var(--text-secondary)]">
-                <BarChart2 size={24} className="opacity-40" />
-              </div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">No spending recorded</p>
-              <p className="text-xs text-[var(--text-secondary)] mt-0.5">Add an expense to view your 6-month trend</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stackedBar} barSize={18}>
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip content={<CustomBarTooltip symbol={symbol} />} />
-                {stackedKeys.map((key) => (
-                  <Bar key={key} dataKey={key} stackId="a" fill={getStackColor(key)} radius={[2, 2, 0, 0]} isAnimationActive />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* ── Daily Trend Line Chart ── */}
-        <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-4">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Daily Spend Trend</h2>
-          {loading ? (
-            <div className="h-48 skeleton rounded-xl" />
-          ) : lineTrend.length === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-[var(--text-secondary)]">
-              <p className="text-sm">No data for this period</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={lineTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 9, fill: "var(--text-secondary)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval={Math.max(0, Math.floor(lineTrend.length / 6) - 1)}
-                />
-                <YAxis hide />
-                <Tooltip content={<CustomLineTooltip symbol={symbol} />} />
-                <Line
-                  type="monotone"
-                  dataKey="amount"
-                  name="Daily"
-                  stroke="#6366F1"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive
-                  animationDuration={600}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="rolling7"
-                  name="7-day avg"
-                  stroke="#F59E0B"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 2"
-                  dot={false}
-                  isAnimationActive
-                  animationDuration={600}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: "10px", paddingTop: "8px" }}
-                  formatter={(value) => <span style={{ color: "var(--text-secondary)" }}>{value}</span>}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
         </div>
       </div>
 

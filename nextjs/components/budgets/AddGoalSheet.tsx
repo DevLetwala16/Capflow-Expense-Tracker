@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useBudgetStore } from "@/lib/store/budgetStore";
+import { useAuthStore } from "@/lib/store/authStore";
 import { type LucideIcon } from "lucide-react";
 
 // ─── Goal icon map ─────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ interface AddGoalSheetProps {
 
 export function AddGoalSheet({ open, onClose }: AddGoalSheetProps) {
   const { addGoal } = useBudgetStore();
+  const { user } = useAuthStore();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -87,7 +89,7 @@ export function AddGoalSheet({ open, onClose }: AddGoalSheetProps) {
 
   const onSubmit = async (data: GoalFormValues) => {
     setSaving(true);
-    await addGoal({ ...data, savedAmount: 0 });
+    await addGoal({ ...data, savedAmount: 0 }, user?.id ?? "anonymous");
     setSaved(true);
     setTimeout(() => { onClose(); setSaved(false); }, 700);
     setSaving(false);
@@ -229,8 +231,8 @@ export function AddGoalSheet({ open, onClose }: AddGoalSheetProps) {
                 type="submit"
                 disabled={saving}
                 whileTap={{ scale: 0.97 }}
-                className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all ${
-                  saved ? "bg-[#10B981]" : saving ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed" : "bg-[#6366F1]"
+                className={`w-full py-4 rounded-2xl font-bold text-base transition-all ${
+                  saved ? "bg-[#10B981] text-white" : saving ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed opacity-70" : "bg-[#6366F1] text-white"
                 }`}
               >
                 {saved ? "✓ Saved!" : saving ? "Saving…" : "Save Goal"}

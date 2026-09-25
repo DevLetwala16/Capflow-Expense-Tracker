@@ -3,8 +3,8 @@ import { db, Budget, Goal } from "@/lib/db";
 
 // ─── State types ──────────────────────────────────────────────────────────────
 
-type NewBudgetData = Omit<Budget, "id" | "createdAt">;
-type NewGoalData = Omit<Goal, "id" | "createdAt" | "updatedAt">;
+type NewBudgetData = Omit<Budget, "id" | "userId" | "createdAt">;
+type NewGoalData = Omit<Goal, "id" | "userId" | "createdAt" | "updatedAt">;
 
 interface BudgetState {
   budgets: Budget[];
@@ -12,14 +12,15 @@ interface BudgetState {
   loading: boolean;
   loadedMonth: string | null;
   goalsLoaded: boolean;
+  currentUserId: string | null;
 
-  loadBudgets: (month: string, force?: boolean) => Promise<void>;
-  addBudget: (data: NewBudgetData) => Promise<void>;
+  loadBudgets: (month: string, userId: string, force?: boolean) => Promise<void>;
+  addBudget: (data: NewBudgetData, userId: string) => Promise<void>;
   updateBudget: (id: number, updates: Partial<Budget>) => Promise<void>;
   deleteBudget: (id: number) => Promise<void>;
 
-  loadGoals: (force?: boolean) => Promise<void>;
-  addGoal: (data: NewGoalData) => Promise<void>;
+  loadGoals: (userId: string, force?: boolean) => Promise<void>;
+  addGoal: (data: NewGoalData, userId: string) => Promise<void>;
   updateGoal: (id: number, updates: Partial<Goal>) => Promise<void>;
   deleteGoal: (id: number) => Promise<void>;
   addFundsToGoal: (id: number, amount: number) => Promise<void>;
@@ -33,28 +34,29 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   loading: false,
   loadedMonth: null,
   goalsLoaded: false,
+  currentUserId: null,
 
   // ── Budgets ──────────────────────────────────────────────────────────────
 
-  loadBudgets: async (month: string, force = false) => {
-    const { loadedMonth, budgets } = get();
-    if (!force && loadedMonth === month && budgets.length >= 0 && loadedMonth !== null) {
+  loadBudgets: async (month: string, userId: string, force = false) => {
+    const { loadedMonth, budgets, currentUserId } = get();
+    if (!force && loadedMonth === month && currentUserId === userId && budgets.length >= 0 && loadedMonth !== null) {
       return;
     }
-    set({ loading: true });
+    set({ loading: true, currentUserId: userId });
     const bList = await db.budgets
-      .where("month")
-      .equals(month)
+      .where("[userId+month]")
+      .equals([userId, month])
       .toArray();
-    set({ budgets: bList, loading: false, loadedMonth: month });
+    set({ budgets: bList, loading: false, loadedMonth: month, currentUserId: userId });
   },
 
-  addBudget: async (data: NewBudgetData) => {
+  addBudget: async (data: NewBudgetData, userId: string) => {
     const now = new Date().toISOString();
-    // Prevent duplicate budget for same category+month
+    // Prevent duplicate budget for same user+category+month
     const existing = await db.budgets
-      .where("[categoryId+month]")
-      .equals([data.categoryId, data.month])
+      .where("[userId+categoryId+month]")
+      .equals([userId, data.categoryId, data.month])
       .first();
     if (existing) {
       // Update instead of duplicate
@@ -64,12 +66,14 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       });
       set((state) => ({
         budgets: state.budgets.map((b) =>
-          b.id === existing.id ? { ...b, limit: data.limit, alertThreshold: data.alertThreshold } : b
+          b.id === existing.id
+            ? { ...b, limit: data.limit, alertThreshold: data.alertThreshold }
+            : b
         ),
       }));
       return;
     }
-    const id = await db.budgets.add({ ...data, createdAt: now } as Budget);
+    const id = await db.budgets.add({ ...data, userId, createdAt: now } as Budget);
     const budget = await db.budgets.get(id as number);
     if (budget) {
       set((state) => ({ budgets: [...state.budgets, budget] }));
@@ -94,19 +98,23 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
 
   // ── Goals ────────────────────────────────────────────────────────────────
 
-  loadGoals: async (force = false) => {
-    const { goalsLoaded, goals } = get();
-    if (!force && goalsLoaded && goals.length >= 0) {
+  loadGoals: async (userId: string, force = false) => {
+    const { goalsLoaded, goals, currentUserId } = get();
+    if (!force && goalsLoaded && currentUserId === userId && goals.length >= 0) {
       return;
     }
-    const goalsList = await db.goals.toArray();
-    set({ goals: goalsList, goalsLoaded: true });
+    const goalsList = await db.goals
+      .where("userId")
+      .equals(userId)
+      .toArray();
+    set({ goals: goalsList, goalsLoaded: true, currentUserId: userId });
   },
 
-  addGoal: async (data: NewGoalData) => {
+  addGoal: async (data: NewGoalData, userId: string) => {
     const now = new Date().toISOString();
     const id = await db.goals.add({
       ...data,
+      userId,
       savedAmount: data.savedAmount ?? 0,
       createdAt: now,
       updatedAt: now,

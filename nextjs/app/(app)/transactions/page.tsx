@@ -1,13 +1,13 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { ArrowLeft, Search, SlidersHorizontal, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowLeft, Search, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { format, parseISO } from "date-fns";
 import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
-import { db, Category } from "@/lib/db";
+import { useCategoryStore } from "@/lib/store/categoryStore";
 import { TransactionRow } from "@/components/transaction/TransactionRow";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
 
@@ -17,16 +17,12 @@ export default function TransactionsPage() {
   const router = useRouter();
   const { transactions, loading } = useTransactionStore();
   const { defaultCurrency, selectedMonth } = useSettingsStore();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const { categories } = useCategoryStore();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
-
-  useEffect(() => {
-    db.categories.orderBy("order").toArray().then(setCategories);
-  }, []);
 
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
@@ -58,7 +54,7 @@ export default function TransactionsPage() {
 
   return (
     <div className="min-h-full bg-[var(--bg-primary)]">
-      {/* Header */}
+      {/* Header (Exact same back button, title, search, filter chips) */}
       <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)]">
         <div className="flex items-center gap-3 px-4 py-3">
           <button onClick={() => router.back()} aria-label="Back">
@@ -106,7 +102,7 @@ export default function TransactionsPage() {
         </div>
       </header>
 
-      <div className="px-4 pb-4 space-y-4">
+      <div className="px-4 pb-8 space-y-4 md:py-6 max-w-4xl mx-auto">
         {loading ? (
           <div className="space-y-3 pt-4">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -161,7 +157,7 @@ export default function TransactionsPage() {
       <motion.button
         whileTap={{ scale: 0.92 }}
         onClick={() => setShowAddSheet(true)}
-        className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] right-4 w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 z-50"
+        className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 z-50"
         aria-label="Add transaction"
       >
         <Plus size={24} className="text-white" strokeWidth={2.5} />

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -89,9 +89,12 @@ export default function OTPPage() {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("capflow_just_signed_in", "true");
+        }
         setSuccess(true);
-        // Use replace so back button doesn't return to auth
-        setTimeout(() => router.replace("/dashboard"), 900);
+        // Use replace to smoothly navigate to the onboarding walkthrough
+        setTimeout(() => router.replace("/onboarding"), 900);
       } else {
         setError("Invalid code. Please try again.");
         setShake(true);

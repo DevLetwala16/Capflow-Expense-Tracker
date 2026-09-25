@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useBudgetStore } from "@/lib/store/budgetStore";
+import { useAuthStore } from "@/lib/store/authStore";
 import { Category } from "@/lib/db";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 
@@ -32,6 +33,7 @@ export function AddBudgetSheet({
   month,
 }: AddBudgetSheetProps) {
   const { addBudget } = useBudgetStore();
+  const { user } = useAuthStore();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -53,7 +55,7 @@ export function AddBudgetSheet({
 
   const onSubmit = async (data: BudgetFormValues) => {
     setSaving(true);
-    await addBudget({ ...data, month });
+    await addBudget({ ...data, month }, user?.id ?? "anonymous");
     setSaved(true);
     setTimeout(() => { onClose(); setSaved(false); }, 700);
     setSaving(false);
@@ -172,12 +174,12 @@ export function AddBudgetSheet({
                 type="submit"
                 disabled={saving || !selectedCategoryId}
                 whileTap={{ scale: 0.97 }}
-                className={`w-full py-4 rounded-2xl font-bold text-white text-base transition-all ${
+                className={`w-full py-4 rounded-2xl font-bold text-base transition-all ${
                   saved
-                    ? "bg-[#10B981]"
+                    ? "bg-[#10B981] text-white"
                     : saving || !selectedCategoryId
-                    ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed"
-                    : "bg-[#6366F1]"
+                    ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed opacity-70"
+                    : "bg-[#6366F1] text-white"
                 }`}
               >
                 {saved ? "✓ Saved!" : saving ? "Saving…" : "Save Budget"}

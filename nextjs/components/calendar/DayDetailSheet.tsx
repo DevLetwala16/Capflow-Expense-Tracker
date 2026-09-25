@@ -6,6 +6,7 @@ import { X, Plus } from "lucide-react";
 import { Transaction, Category } from "@/lib/db";
 import { db } from "@/lib/db";
 import { useCategoryStore } from "@/lib/store/categoryStore";
+import { useAuthStore } from "@/lib/store/authStore";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
 
@@ -38,22 +39,24 @@ export function DayDetailSheet({
   currency,
   onTransactionAdded,
 }: DayDetailSheetProps) {
+  const { user } = useAuthStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const { categories, loadCategories } = useCategoryStore();
+  const { categories } = useCategoryStore();
   const [showAddSheet, setShowAddSheet] = useState(false);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
 
   useEffect(() => {
-    if (!open || !selectedDate) return;
+    if (!open || !selectedDate || !user?.id) return;
 
-    loadCategories();
     db.transactions
-      .where("date")
-      .equals(selectedDate)
-      .reverse()
+      .where("[userId+date]")
+      .equals([user.id, selectedDate])
       .toArray()
-      .then(setTransactions);
-  }, [open, selectedDate, loadCategories]);
+      .then((txs) => {
+        txs.reverse();
+        setTransactions(txs);
+      });
+  }, [open, selectedDate, user?.id]);
 
   const net = transactions.reduce((sum, tx) => {
     return sum + (tx.type === "income" ? tx.amount : -tx.amount);

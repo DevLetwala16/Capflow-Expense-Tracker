@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { Plus, GripVertical, Pencil, Trash2, Check, X } from "lucide-react";
 import { db, Category, seedDefaultCategories } from "@/lib/db";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
+import { useAuthStore } from "@/lib/store/authStore";
+import { useCategoryStore } from "@/lib/store/categoryStore";
 
 const ICON_OPTIONS = [
   "utensils", "home", "plane", "zap", "clapperboard", "shopping-bag",
@@ -28,6 +30,8 @@ interface EditState {
 }
 
 export default function CategoriesPage() {
+  const { user } = useAuthStore();
+  const { refreshCategories } = useCategoryStore();
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -38,23 +42,27 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
 
   const reload = async () => {
-    const cats = await db.categories.orderBy("order").toArray();
+    if (!user?.id) return;
+    const cats = await db.categories.where("userId").equals(user.id).sortBy("order");
     setCategories(cats);
     setLoading(false);
+    await refreshCategories(user.id);
   };
 
   useEffect(() => {
-    seedDefaultCategories().then(reload);
-  }, []);
+    if (!user?.id) return;
+    seedDefaultCategories(user.id).then(reload);
+  }, [user]);
 
   // ── Add category ────────────────────────────────────────────────────────────
 
   const handleAdd = async () => {
-    if (!newForm.name.trim()) return;
+    if (!user?.id || !newForm.name.trim()) return;
     setSaving(true);
     const maxOrder = categories.reduce((m, c) => Math.max(m, c.order), 0);
     await db.categories.add({
       ...newForm,
+      userId: user.id,
       name: newForm.name.trim(),
       order: maxOrder + 1,
       isDefault: false,

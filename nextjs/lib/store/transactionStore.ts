@@ -30,17 +30,18 @@ function getCurrentLocalMonth(): string {
 }
 
 // The fields accepted when adding a new transaction (excludes auto-generated fields)
-type NewTransactionData = Omit<Transaction, "id" | "createdAt" | "updatedAt">;
+type NewTransactionData = Omit<Transaction, "id" | "userId" | "createdAt" | "updatedAt">;
 
 interface TransactionState {
   transactions: Transaction[];
   loading: boolean;
   loadedMonth: string | null;
   selectedMonth: string;
+  currentUserId: string | null;
 
-  loadTransactions: (month: string) => Promise<void>;
-  refreshTransactions: () => Promise<void>; // force reload current month
-  addTransaction: (tx: NewTransactionData) => Promise<void>;
+  loadTransactions: (month: string, userId: string) => Promise<void>;
+  refreshTransactions: (userId: string) => Promise<void>; // force reload current month
+  addTransaction: (tx: NewTransactionData, userId: string) => Promise<void>;
   updateTransaction: (id: number, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: number) => Promise<void>;
 
@@ -56,34 +57,36 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   loading: false,
   loadedMonth: null,
   selectedMonth: getCurrentLocalMonth(),
+  currentUserId: null,
 
-  loadTransactions: async (month: string) => {
+  loadTransactions: async (month: string, userId: string) => {
     const state = get();
-    if (state.loadedMonth === month && !state.loading) {
+    if (state.loadedMonth === month && state.currentUserId === userId && !state.loading) {
       return;
     }
-    set({ loading: true });
+    set({ loading: true, currentUserId: userId });
     try {
       const { startDate, endDate } = getMonthRange(month);
+      // Query all transactions for this user in date range
       const txs = await db.transactions
-        .where("date")
-        .between(startDate, endDate, true, true)
+        .where("[userId+date]")
+        .between([userId, startDate], [userId, endDate], true, true)
         .toArray();
-      set({ transactions: txs, loading: false, loadedMonth: month, selectedMonth: month });
+      set({ transactions: txs, loading: false, loadedMonth: month, selectedMonth: month, currentUserId: userId });
     } catch (err) {
       console.error("Failed to load transactions:", err);
-      set({ loading: false, loadedMonth: month, selectedMonth: month });
+      set({ loading: false, loadedMonth: month, selectedMonth: month, currentUserId: userId });
     }
   },
 
-  refreshTransactions: async () => {
+  refreshTransactions: async (userId: string) => {
     const month = get().selectedMonth;
     set({ loading: true });
     try {
       const { startDate, endDate } = getMonthRange(month);
       const txs = await db.transactions
-        .where("date")
-        .between(startDate, endDate, true, true)
+        .where("[userId+date]")
+        .between([userId, startDate], [userId, endDate], true, true)
         .toArray();
       set({ transactions: txs, loading: false, loadedMonth: month });
     } catch (err) {
@@ -92,10 +95,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }
   },
 
-  addTransaction: async (txData: NewTransactionData) => {
+  addTransaction: async (txData: NewTransactionData, userId: string) => {
     const now = new Date().toISOString();
     const id = await db.transactions.add({
       ...txData,
+      userId,
       createdAt: now,
       updatedAt: now,
     } as Transaction);

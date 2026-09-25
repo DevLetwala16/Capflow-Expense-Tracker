@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useTransactionStore } from "@/lib/store/transactionStore";
+import { useAuthStore } from "@/lib/store/authStore";
 import { Category } from "@/lib/db";
 import { DynamicIcon } from "./DynamicIcon";
 
@@ -55,6 +56,7 @@ export function AddTransactionSheet({
   const [amountStr, setAmountStr] = useState("");
   const [showKeypad, setShowKeypad] = useState(false);
   const { addTransaction, updateTransaction } = useTransactionStore();
+  const { user } = useAuthStore();
   const today = (() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -156,7 +158,7 @@ export function AddTransactionSheet({
       if (editTransaction) {
         await updateTransaction(editTransaction.id, data);
       } else {
-        await addTransaction(data);
+        await addTransaction(data, user?.id ?? "anonymous");
       }
       setSaved(true);
       setTimeout(() => {
@@ -483,14 +485,14 @@ export function AddTransactionSheet({
                 type="submit"
                 disabled={saving || !amount || amount <= 0 || !selectedCategoryId}
                 whileTap={{ scale: 0.98 }}
-                className={`w-full py-3 rounded-xl font-bold text-white text-sm transition-all shadow-md ${
+                className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md ${
                   saved
-                    ? "bg-[#10B981]"
+                    ? "bg-[#10B981] text-white"
                     : saving || !amount || amount <= 0 || !selectedCategoryId
-                    ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed opacity-60"
+                    ? "bg-[var(--border-color)] text-[var(--text-secondary)] cursor-not-allowed opacity-70"
                     : txType === "expense"
-                    ? "bg-[#EF4444] hover:bg-[#DC2626]"
-                    : "bg-[#10B981] hover:bg-[#059669]"
+                    ? "bg-[#EF4444] text-white hover:bg-[#DC2626]"
+                    : "bg-[#10B981] text-white hover:bg-[#059669]"
                 }`}
               >
                 {saved

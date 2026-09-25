@@ -119,7 +119,7 @@ function AuthContent() {
         className="text-center text-xs text-[var(--text-secondary)] mt-8 px-4"
       >
         All your financial data is stored only on this device.{" "}
-        <span className="text-[var(--accent)]">Never uploaded to any server.</span>
+        <span className="text-[#6366F1] font-medium">Never uploaded to any server.</span>
       </motion.p>
     </div>
   );

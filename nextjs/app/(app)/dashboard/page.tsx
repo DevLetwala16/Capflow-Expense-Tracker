@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -11,7 +11,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ReceiptText,
-  Sparkles,
 } from "lucide-react";
 import { format, addMonths, subMonths, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,7 +26,6 @@ export default function DashboardPage() {
   const {
     transactions,
     loading,
-    loadTransactions,
     totalIncome,
     totalExpense,
     netSavings,
@@ -36,18 +34,13 @@ export default function DashboardPage() {
   } = useTransactionStore();
 
   const { defaultCurrency, selectedMonth, setSelectedMonth } = useSettingsStore();
-  const { categories, loadCategories } = useCategoryStore();
+  const { categories } = useCategoryStore();
 
   const [fabOpen, setFabOpen] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [addType, setAddType] = useState<"expense" | "income">("expense");
 
   const currentDate = useMemo(() => parseISO(`${selectedMonth}-01`), [selectedMonth]);
-
-  useEffect(() => {
-    loadCategories();
-    loadTransactions(selectedMonth);
-  }, [selectedMonth, loadCategories, loadTransactions]);
 
   const income = totalIncome();
   const expense = totalExpense();
@@ -69,7 +62,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-full bg-[var(--bg-primary)]">
-      {/* ── Sticky Header ── */}
+      {/* ── Sticky Header (Same exact buttons, icons, and month selector) ── */}
       <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)]">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
@@ -133,100 +126,111 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="px-4 pb-20 pt-3 space-y-4">
-        {/* Balance Overview Card */}
-        <BalanceCard
-          income={income}
-          expense={expense}
-          savings={savings}
-          spentPercent={spentPercent}
-          currency={defaultCurrency}
-          loading={loading}
-        />
-
-        {/* Quick Action Shortcuts */}
-        <div className="grid grid-cols-2 gap-2.5">
-          <button
-            onClick={() => handleOpenAdd("expense")}
-            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/20 hover:bg-[#EF4444]/15 transition-all text-xs font-semibold text-[#EF4444]"
-          >
-            <ArrowDownRight size={15} />
-            <span>Add Expense</span>
-          </button>
-          <button
-            onClick={() => handleOpenAdd("income")}
-            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#10B981]/10 border border-[#10B981]/20 hover:bg-[#10B981]/15 transition-all text-xs font-semibold text-[#10B981]"
-          >
-            <ArrowUpRight size={15} />
-            <span>Add Income</span>
-          </button>
-        </div>
-
-        {/* Weekly Bar Chart */}
-        <div className="bg-[var(--bg-card)] rounded-2xl p-4 border border-[var(--border-color)]">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Weekly Spending</h2>
-            <span className="text-xs text-[var(--text-secondary)]">Last 7 days</span>
-          </div>
-          {loading ? (
-            <div className="h-24 skeleton rounded-xl" />
-          ) : (
-            <WeeklyBarChart data={weekly} currency={defaultCurrency} />
-          )}
-        </div>
-
-        {/* Recent Transactions */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent Transactions</h2>
-            <Link href="/calendar" className="text-xs text-[#6366F1] font-semibold hover:underline">
-              View Calendar →
-            </Link>
-          </div>
-
-          {loading ? (
-            <div className="space-y-2.5">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 skeleton rounded-xl" />
-              ))}
+      {/* ── Main Content: 1 column on phone, 2-column layout on laptop/PC, with same exact cards, buttons, fonts, and graph ── */}
+      <div className="px-4 pb-20 pt-3 md:pb-8 md:pt-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6">
+          {/* Left Column on Laptop (Balance, Shortcuts, Weekly Graph) */}
+          <div className="md:col-span-7 lg:col-span-7 space-y-4">
+            {/* Balance Overview Card */}
+            <div id="tour-balance-card">
+              <BalanceCard
+                income={income}
+                expense={expense}
+                savings={savings}
+                spentPercent={spentPercent}
+                currency={defaultCurrency}
+                loading={loading}
+              />
             </div>
-          ) : recentTxs.length === 0 ? (
-            <div className="bg-[var(--bg-card)] rounded-2xl p-7 text-center border border-[var(--border-color)]">
-              <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mx-auto mb-3 text-[var(--text-secondary)]">
-                <ReceiptText size={24} className="opacity-50" />
-              </div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">No transactions yet</p>
-              <p className="text-xs text-[var(--text-secondary)] mt-1 mb-4">
-                Start tracking by recording your first transaction.
-              </p>
+
+            {/* Quick Action Shortcuts (Exact same buttons and fonts) */}
+            <div id="tour-quick-actions" className="grid grid-cols-2 gap-2.5">
               <button
                 onClick={() => handleOpenAdd("expense")}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-semibold hover:bg-[#5558E6] transition-colors shadow-sm"
+                className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/20 hover:bg-[#EF4444]/15 transition-all text-xs font-semibold text-[#EF4444]"
               >
-                <Plus size={14} />
-                <span>Add Transaction</span>
+                <ArrowDownRight size={15} />
+                <span>Add Expense</span>
+              </button>
+              <button
+                onClick={() => handleOpenAdd("income")}
+                className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#10B981]/10 border border-[#10B981]/20 hover:bg-[#10B981]/15 transition-all text-xs font-semibold text-[#10B981]"
+              >
+                <ArrowUpRight size={15} />
+                <span>Add Income</span>
               </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {recentTxs.map((tx) => (
-                <TransactionRow
-                  key={tx.id}
-                  transaction={tx}
-                  categories={categories}
-                  currency={defaultCurrency}
-                  onEdit={() => {}}
-                  onDelete={async (id) => {
-                    await useTransactionStore.getState().deleteTransaction(id);
-                  }}
-                />
-              ))}
+
+            {/* Weekly Bar Chart (Exact same graph, card, fonts) */}
+            <div id="tour-weekly-chart" className="bg-[var(--bg-card)] rounded-2xl p-4 border border-[var(--border-color)]">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Weekly Spending</h2>
+                <span className="text-xs text-[var(--text-secondary)]">Last 7 days</span>
+              </div>
+              {loading ? (
+                <div className="h-24 skeleton rounded-xl" />
+              ) : (
+                <WeeklyBarChart data={weekly} currency={defaultCurrency} />
+              )}
             </div>
-          )}
+          </div>
+
+          {/* Right Column on Laptop (Recent Transactions) */}
+          <div className="md:col-span-5 lg:col-span-5">
+            {/* Recent Transactions (Exact same section, link, rows) */}
+            <div id="tour-transactions" className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent Transactions</h2>
+                <Link href="/calendar" className="text-xs text-[#6366F1] font-semibold hover:underline">
+                  View Calendar →
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="space-y-2.5">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-16 skeleton rounded-xl" />
+                  ))}
+                </div>
+              ) : recentTxs.length === 0 ? (
+                <div className="bg-[var(--bg-card)] rounded-2xl p-7 text-center border border-[var(--border-color)]">
+                  <div className="w-12 h-12 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center mx-auto mb-3 text-[var(--text-secondary)]">
+                    <ReceiptText size={24} className="opacity-50" />
+                  </div>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">No transactions yet</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 mb-4">
+                    Start tracking by recording your first transaction.
+                  </p>
+                  <button
+                    onClick={() => handleOpenAdd("expense")}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-semibold hover:bg-[#5558E6] transition-colors shadow-sm"
+                  >
+                    <Plus size={14} />
+                    <span>Add Transaction</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentTxs.map((tx) => (
+                    <TransactionRow
+                      key={tx.id}
+                      transaction={tx}
+                      categories={categories}
+                      currency={defaultCurrency}
+                      onEdit={() => {}}
+                      onDelete={async (id) => {
+                        await useTransactionStore.getState().deleteTransaction(id);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── Position-fixed FAB (Guaranteed inside app shell, clear from bottom nav) ── */}
+      {/* ── Position-fixed FAB (Device-aware: above mobile bottom nav on phone, or bottom corner on laptop) ── */}
       <AnimatePresence>
         {fabOpen && (
           <>
@@ -241,11 +245,7 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              className="fixed flex flex-col gap-2 z-[70]"
-              style={{
-                bottom: "calc(var(--bottom-nav-h) + 84px)",
-                right: "max(20px, calc((100vw - 480px) / 2 + 20px))",
-              }}
+              className="fixed flex flex-col gap-2 z-[70] bottom-[calc(var(--bottom-nav-h)+84px)] md:bottom-28 right-5 md:right-8"
             >
               <button
                 onClick={() => handleOpenAdd("expense")}
@@ -267,14 +267,13 @@ export default function DashboardPage() {
       </AnimatePresence>
 
       <motion.button
+        id="tour-fab"
         whileTap={{ scale: 0.92 }}
         onClick={() => setFabOpen((o) => !o)}
-        className="fixed w-13 h-13 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-lg shadow-indigo-500/30 z-[70] text-white"
+        className="fixed rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-lg shadow-indigo-500/30 z-[70] text-white bottom-[calc(var(--bottom-nav-h)+20px)] md:bottom-8 right-5 md:right-8"
         style={{
           width: "52px",
           height: "52px",
-          bottom: "calc(var(--bottom-nav-h) + 20px)",
-          right: "max(20px, calc((100vw - 480px) / 2 + 20px))",
         }}
         aria-label="Add transaction"
       >

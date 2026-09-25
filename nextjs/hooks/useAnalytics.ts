@@ -10,6 +10,8 @@ import {
 } from "@/lib/analytics/jsEngine";
 import { db, Category, Transaction } from "@/lib/db";
 
+import { useAuthStore } from "@/lib/store/authStore";
+
 export type AnalyticsPeriod = "week" | "month" | "year";
 
 export function useAnalytics(
@@ -19,6 +21,7 @@ export function useAnalytics(
   groupBy: "category" | "paymentMethod" = "category",
   customRange?: DateRange
 ): AnalyticsResult & { loading: boolean } {
+  const { user } = useAuthStore();
   const { transactions: storeTransactions, loading: storeLoading } = useTransactionStore();
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [dbLoading, setDbLoading] = useState(true);
@@ -26,8 +29,15 @@ export function useAnalytics(
   useEffect(() => {
     let mounted = true;
     async function loadAll() {
+      if (!user?.id) {
+        if (mounted) {
+          setAllTransactions([]);
+          setDbLoading(false);
+        }
+        return;
+      }
       try {
-        const txs = await db.transactions.toArray();
+        const txs = await db.transactions.where("userId").equals(user.id).toArray();
         if (mounted) {
           setAllTransactions(txs);
           setDbLoading(false);
@@ -41,7 +51,7 @@ export function useAnalytics(
     return () => {
       mounted = false;
     };
-  }, [storeTransactions]);
+  }, [user?.id, storeTransactions]);
 
   const result = useMemo(() => {
     const range = customRange ?? getRangeForPeriod(period);
