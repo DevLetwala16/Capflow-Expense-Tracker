@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Search, Plus } from "lucide-react";
+import { ArrowLeft, Search, Plus, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { format, parseISO } from "date-fns";
@@ -10,6 +10,9 @@ import { useSettingsStore } from "@/lib/store/settingsStore";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { TransactionRow } from "@/components/transaction/TransactionRow";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
+import { TransactionDetailSheet } from "@/components/transaction/TransactionDetailSheet";
+import { TransactionStatementSheet } from "@/components/transaction/TransactionStatementSheet";
+import { Transaction } from "@/lib/db";
 
 type FilterType = "all" | "expense" | "income";
 
@@ -21,8 +24,18 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [showStatementSheet, setShowStatementSheet] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
+
+  const handleRowClick = (id: number) => {
+    const tx = transactions.find((t) => t.id === id);
+    if (tx) {
+      setSelectedTxForDetail(tx);
+    }
+  };
 
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
@@ -61,6 +74,14 @@ export default function TransactionsPage() {
             <ArrowLeft size={20} className="text-[var(--text-secondary)]" />
           </button>
           <h1 className="text-lg font-bold text-[var(--text-primary)] flex-1">Transactions</h1>
+          <button
+            onClick={() => setShowStatementSheet(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/25 text-xs font-semibold transition-all active:scale-95 shadow-sm"
+            title="Export / Email Statement"
+          >
+            <FileText size={14} />
+            <span>Email Statement</span>
+          </button>
         </div>
 
         {/* Search */}
@@ -131,7 +152,7 @@ export default function TransactionsPage() {
                       transaction={tx}
                       categories={categories}
                       currency={defaultCurrency}
-                      onEdit={() => {}}
+                      onEdit={handleRowClick}
                       onDelete={async (id) => {
                         await useTransactionStore.getState().deleteTransaction(id);
                       }}
@@ -156,18 +177,67 @@ export default function TransactionsPage() {
       {/* FAB */}
       <motion.button
         whileTap={{ scale: 0.92 }}
-        onClick={() => setShowAddSheet(true)}
+        onClick={() => {
+          setEditingTx(null);
+          setShowAddSheet(true);
+        }}
         className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 z-50"
         aria-label="Add transaction"
       >
         <Plus size={24} className="text-white" strokeWidth={2.5} />
       </motion.button>
 
-      <AddTransactionSheet
-        open={showAddSheet}
-        onClose={() => setShowAddSheet(false)}
+      {/* Transaction Detail Sheet (Read-Only Info View) */}
+      <TransactionDetailSheet
+        open={!!selectedTxForDetail}
+        onClose={() => setSelectedTxForDetail(null)}
+        transaction={selectedTxForDetail}
         categories={categories}
         currency={defaultCurrency}
+        onEdit={(tx) => {
+          setSelectedTxForDetail(null);
+          setEditingTx(tx);
+          setShowAddSheet(true);
+        }}
+        onDelete={async (id) => {
+          await useTransactionStore.getState().deleteTransaction(id);
+          setSelectedTxForDetail(null);
+        }}
+      />
+
+      {/* Add / Edit Transaction Sheet */}
+      <AddTransactionSheet
+        open={showAddSheet}
+        onClose={() => {
+          setShowAddSheet(false);
+          setEditingTx(null);
+        }}
+        categories={categories}
+        currency={defaultCurrency}
+        editTransaction={
+          editingTx && editingTx.id
+            ? {
+                id: editingTx.id,
+                data: {
+                  type: editingTx.type,
+                  amount: editingTx.amount,
+                  categoryId: editingTx.categoryId,
+                  title: editingTx.title,
+                  date: editingTx.date,
+                  paymentMethod: editingTx.paymentMethod,
+                  notes: editingTx.notes,
+                  currency: editingTx.currency || defaultCurrency,
+                  receiptImage: editingTx.receiptImage,
+                },
+              }
+            : null
+        }
+      />
+
+      {/* Transaction Statement Sheet (Email & PDF) */}
+      <TransactionStatementSheet
+        open={showStatementSheet}
+        onClose={() => setShowStatementSheet(false)}
       />
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart2, CalendarDays, Target, Settings } from "lucide-react";
+import { Home, BarChart2, CalendarDays, Target, CreditCard, Settings, ReceiptText } from "lucide-react";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useBudgetStore } from "@/lib/store/budgetStore";
@@ -12,12 +12,16 @@ import { rehydrateWalkthrough } from "@/lib/store/walkthroughStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { DesktopSidebar } from "@/components/shared/DesktopSidebar";
 
+import { useEMIStore } from "@/lib/store/emiStore";
+
 const NAV_ITEMS = [
-  { href: "/dashboard",   icon: Home,          label: "Home" },
-  { href: "/analytics",   icon: BarChart2,     label: "Analytics" },
-  { href: "/calendar",    icon: CalendarDays,  label: "Calendar" },
-  { href: "/budgets",     icon: Target,        label: "Budgets" },
-  { href: "/settings",    icon: Settings,      label: "Settings" },
+  { href: "/dashboard",    icon: Home,         label: "Home" },
+  { href: "/transactions", icon: ReceiptText,  label: "History" },
+  { href: "/analytics",    icon: BarChart2,    label: "Analytics" },
+  { href: "/calendar",     icon: CalendarDays, label: "Calendar" },
+  { href: "/budgets",      icon: Target,       label: "Budgets" },
+  { href: "/emis",         icon: CreditCard,   label: "EMIs" },
+  { href: "/settings",     icon: Settings,     label: "Settings" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -27,6 +31,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { loadBudgets, loadGoals } = useBudgetStore();
   const { selectedMonth } = useSettingsStore();
   const { user, setUser } = useAuthStore();
+
+  const { loadEMIs } = useEMIStore();
 
   // Track the last user we bootstrapped stores for, so we don't re-run on
   // every render — only when the user actually changes.
@@ -60,7 +66,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     loadTransactions(selectedMonth, user.id);
     loadBudgets(selectedMonth, user.id);
     loadGoals(user.id);
-  }, [user, selectedMonth, loadCategories, loadTransactions, loadBudgets, loadGoals]);
+    loadEMIs(user.id);
+  }, [user, selectedMonth, loadCategories, loadTransactions, loadBudgets, loadGoals, loadEMIs]);
 
   // Reload transactions / budgets when the selected month changes (user already bootstrapped)
   useEffect(() => {
@@ -95,17 +102,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-medium relative transition-colors ${
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[9px] font-medium relative transition-colors ${
                 active ? "text-[#6366F1]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
               aria-label={label}
               aria-current={active ? "page" : undefined}
             >
               {active && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-9 h-0.5 bg-[#6366F1] rounded-b-full" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#6366F1] rounded-b-full" />
               )}
-              <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-              <span>{label}</span>
+              <Icon size={19} strokeWidth={active ? 2.2 : 1.8} />
+              <span className="truncate max-w-full px-0.5">{label}</span>
             </Link>
           );
         })}

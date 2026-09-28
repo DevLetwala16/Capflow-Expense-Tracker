@@ -21,6 +21,8 @@ import { BalanceCard } from "@/components/shared/BalanceCard";
 import { WeeklyBarChart } from "@/components/shared/WeeklyBarChart";
 import { TransactionRow } from "@/components/transaction/TransactionRow";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
+import { TransactionDetailSheet } from "@/components/transaction/TransactionDetailSheet";
+import { Transaction } from "@/lib/db";
 
 export default function DashboardPage() {
   const {
@@ -39,6 +41,8 @@ export default function DashboardPage() {
   const [fabOpen, setFabOpen] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [addType, setAddType] = useState<"expense" | "income">("expense");
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   const currentDate = useMemo(() => parseISO(`${selectedMonth}-01`), [selectedMonth]);
 
@@ -55,9 +59,17 @@ export default function DashboardPage() {
   };
 
   const handleOpenAdd = (type: "expense" | "income") => {
+    setEditingTx(null);
     setAddType(type);
     setFabOpen(false);
     setShowAddSheet(true);
+  };
+
+  const handleRowClick = (id: number) => {
+    const tx = transactions.find((t) => t.id === id);
+    if (tx) {
+      setSelectedTxForDetail(tx);
+    }
   };
 
   return (
@@ -181,8 +193,8 @@ export default function DashboardPage() {
             <div id="tour-transactions" className="space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent Transactions</h2>
-                <Link href="/calendar" className="text-xs text-[#6366F1] font-semibold hover:underline">
-                  View Calendar →
+                <Link href="/transactions" className="text-xs text-[#6366F1] font-semibold hover:underline">
+                  View All →
                 </Link>
               </div>
 
@@ -217,7 +229,7 @@ export default function DashboardPage() {
                       transaction={tx}
                       categories={categories}
                       currency={defaultCurrency}
-                      onEdit={() => {}}
+                      onEdit={handleRowClick}
                       onDelete={async (id) => {
                         await useTransactionStore.getState().deleteTransaction(id);
                       }}
@@ -282,13 +294,52 @@ export default function DashboardPage() {
         </motion.div>
       </motion.button>
 
-      {/* Add Transaction Sheet */}
+      {/* Transaction Detail Sheet (Read-Only Info View) */}
+      <TransactionDetailSheet
+        open={!!selectedTxForDetail}
+        onClose={() => setSelectedTxForDetail(null)}
+        transaction={selectedTxForDetail}
+        categories={categories}
+        currency={defaultCurrency}
+        onEdit={(tx) => {
+          setSelectedTxForDetail(null);
+          setEditingTx(tx);
+          setShowAddSheet(true);
+        }}
+        onDelete={async (id) => {
+          await useTransactionStore.getState().deleteTransaction(id);
+          setSelectedTxForDetail(null);
+        }}
+      />
+
+      {/* Add / Edit Transaction Sheet */}
       <AddTransactionSheet
         open={showAddSheet}
-        onClose={() => setShowAddSheet(false)}
+        onClose={() => {
+          setShowAddSheet(false);
+          setEditingTx(null);
+        }}
         defaultType={addType}
         categories={categories}
         currency={defaultCurrency}
+        editTransaction={
+          editingTx && editingTx.id
+            ? {
+                id: editingTx.id,
+                data: {
+                  type: editingTx.type,
+                  amount: editingTx.amount,
+                  categoryId: editingTx.categoryId,
+                  title: editingTx.title,
+                  date: editingTx.date,
+                  paymentMethod: editingTx.paymentMethod,
+                  notes: editingTx.notes,
+                  currency: editingTx.currency || defaultCurrency,
+                  receiptImage: editingTx.receiptImage,
+                },
+              }
+            : null
+        }
       />
     </div>
   );

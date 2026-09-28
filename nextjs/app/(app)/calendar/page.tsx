@@ -30,6 +30,7 @@ import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
+import { TransactionDetailSheet } from "@/components/transaction/TransactionDetailSheet";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,8 @@ export default function CalendarPage() {
 
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [addDefaultType, setAddDefaultType] = useState<"expense" | "income">("expense");
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   const currentDate = useMemo(() => parseISO(`${selectedMonth}-01`), [selectedMonth]);
 
@@ -415,6 +418,7 @@ export default function CalendarPage() {
                 {/* Quick Add Button for this day */}
                 <button
                   onClick={() => {
+                    setEditingTx(null);
                     setAddDefaultType("expense");
                     setShowAddSheet(true);
                   }}
@@ -473,7 +477,8 @@ export default function CalendarPage() {
                           key={tx.id}
                           initial={{ opacity: 0, y: 4 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="flex items-center gap-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl p-3 hover:border-[#6366F1]/40 transition-colors"
+                          onClick={() => setSelectedTxForDetail(tx)}
+                          className="flex items-center gap-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl p-3 hover:border-[#6366F1]/50 cursor-pointer active:scale-[0.99] transition-all"
                         >
                           <div
                             className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -532,6 +537,7 @@ export default function CalendarPage() {
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => {
+                          setEditingTx(null);
                           setAddDefaultType("expense");
                           setShowAddSheet(true);
                         }}
@@ -541,6 +547,7 @@ export default function CalendarPage() {
                       </button>
                       <button
                         onClick={() => {
+                          setEditingTx(null);
                           setAddDefaultType("income");
                           setShowAddSheet(true);
                         }}
@@ -557,11 +564,33 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* ── Add Transaction Sheet (Prefilled with Selected Date) ── */}
+      {/* Transaction Detail Sheet (Read-Only Info View) */}
+      <TransactionDetailSheet
+        open={!!selectedTxForDetail}
+        onClose={() => setSelectedTxForDetail(null)}
+        transaction={selectedTxForDetail}
+        categories={categories}
+        currency={defaultCurrency}
+        onEdit={(tx) => {
+          setSelectedTxForDetail(null);
+          setEditingTx(tx);
+          setShowAddSheet(true);
+        }}
+        onDelete={async (id) => {
+          await db.transactions.delete(id);
+          setSelectedTxForDetail(null);
+          if (user?.id) {
+            loadMonthData(selectedMonth, user.id);
+          }
+        }}
+      />
+
+      {/* ── Add / Edit Transaction Sheet ── */}
       <AddTransactionSheet
         open={showAddSheet}
         onClose={() => {
           setShowAddSheet(false);
+          setEditingTx(null);
           if (user?.id) {
             loadMonthData(selectedMonth, user.id);
           }
@@ -570,6 +599,24 @@ export default function CalendarPage() {
         categories={categories}
         currency={defaultCurrency}
         prefillDate={selectedDate}
+        editTransaction={
+          editingTx && editingTx.id
+            ? {
+                id: editingTx.id,
+                data: {
+                  type: editingTx.type,
+                  amount: editingTx.amount,
+                  categoryId: editingTx.categoryId,
+                  title: editingTx.title,
+                  date: editingTx.date,
+                  paymentMethod: editingTx.paymentMethod,
+                  notes: editingTx.notes,
+                  currency: editingTx.currency || defaultCurrency,
+                  receiptImage: editingTx.receiptImage,
+                },
+              }
+            : null
+        }
       />
     </div>
   );

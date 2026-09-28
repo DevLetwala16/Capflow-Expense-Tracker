@@ -23,6 +23,12 @@ export interface DailyTrendEntry {
   label: string; // "3 Sep"
   amount: number;
   rolling7: number;
+  // FastAPI-only extras (optional — absent in jsEngine results):
+  zScore?: number;
+  stdDevUpper?: number;
+  stdDevLower?: number;
+  regressionTrend?: number;
+  isAnomaly?: boolean;
 }
 
 export interface InsightItem {

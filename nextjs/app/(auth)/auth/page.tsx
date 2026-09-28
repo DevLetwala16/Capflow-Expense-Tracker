@@ -105,7 +105,7 @@ function AuthContent() {
 
         <Button
           onClick={() => router.push("/auth/otp")}
-          className="w-full py-3.5 rounded-2xl bg-[#F97316] hover:bg-[#ea6c0a] text-white font-semibold text-sm gap-2 h-auto"
+          className="w-full py-3.5 rounded-2xl bg-[#6366F1] hover:bg-[#5558E6] text-white font-semibold text-sm gap-2 h-auto shadow-md shadow-indigo-500/20 active:scale-[0.99] transition-all"
         >
           <Mail size={16} />
           Continue with Email

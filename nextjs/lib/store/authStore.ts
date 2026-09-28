@@ -62,6 +62,13 @@ export const useAuthStore = create<AuthState>()(
             goalsLoaded: false,
           });
         });
+        import('./emiStore').then(({ useEMIStore }) => {
+          useEMIStore.setState({
+            emis: [],
+            loading: false,
+            loaded: false,
+          });
+        });
       },
     }),
     {

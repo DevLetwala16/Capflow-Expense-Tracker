@@ -1,4 +1,4 @@
-﻿import nodemailer from "nodemailer";
+import nodemailer from "nodemailer";
 
 // ─── SMTP Transporter (SSL port 465) ─────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -272,4 +272,270 @@ export async function sendEMIReminder(
 </body>
 </html>`,
   });
+}
+
+// ─── Send Monthly EMI Summary Email ──────────────────────────────────────────
+export interface EmiSummaryItem {
+  name: string;
+  monthlyCost: number;
+  dueDay: number;
+}
+
+export async function sendMonthlySummaryEmail(
+  email: string,
+  name: string,
+  month: string,
+  emis: EmiSummaryItem[],
+): Promise<void> {
+  const year = new Date().getFullYear();
+  const displayName = name ? name.trim() : "there";
+
+  const totalAmount = emis.reduce((sum, e) => sum + e.monthlyCost, 0);
+
+  // Build EMI table rows
+  const emiRows = emis
+    .map(
+      (e) => `
+        <tr>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e2e8f0;">
+            ${e.name}
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #38bdf8; text-align: right;">
+            &#8377;${e.monthlyCost.toLocaleString("en-IN")}
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #94a3b8; text-align: center;">
+            ${e.dueDay}${ordinalSuffix(e.dueDay)}
+          </td>
+        </tr>`,
+    )
+    .join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>CapFlow Monthly EMI Summary</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #0b0f19; width: 100%; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 520px; margin: 0 auto; background-color: #111827; border: 1px solid #1f2937; border-radius: 16px; overflow: hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding: 32px 32px 16px 32px;">
+              <img src="${LOGO_URL}" alt="CapFlow" width="48" height="48" style="display: block; width: 48px; height: 48px; border-radius: 10px; margin: 0 auto 12px; object-fit: contain;" />
+              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff;">Monthly EMI Summary</h1>
+              <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">${month}</p>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 32px;">
+              <div style="height: 1px; background-color: #1f2937; width: 100%;"></div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 24px 32px 8px 32px;">
+              <p style="margin: 0 0 20px 0; font-size: 15px; color: #e2e8f0;">Hi ${displayName},</p>
+              <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 22px; color: #94a3b8;">
+                Here is your EMI schedule for <strong style="color: #ffffff;">${month}</strong>. Make sure your accounts are funded before each due date.
+              </p>
+
+              <!-- EMI Table -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border: 1px solid #1f2937; border-radius: 10px; overflow: hidden; margin-bottom: 20px;">
+                <thead>
+                  <tr style="background-color: #0d1321;">
+                    <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; text-align: left; font-weight: 600;">EMI Name</th>
+                    <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; text-align: right; font-weight: 600;">Amount</th>
+                    <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; text-align: center; font-weight: 600;">Due Day</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${emiRows}
+                </tbody>
+                <!-- Total Row -->
+                <tfoot>
+                  <tr style="background-color: #0d1321;">
+                    <td style="padding: 12px 12px; font-size: 13px; color: #e2e8f0; font-weight: 600;">Total</td>
+                    <td style="padding: 12px 12px; font-size: 14px; color: #38bdf8; font-weight: 700; text-align: right;">&#8377;${totalAmount.toLocaleString("en-IN")}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              <p style="margin: 0 0 24px 0; font-size: 13px; line-height: 20px; color: #94a3b8;">
+                Best regards,<br />
+                <span style="color: #e2e8f0; font-weight: 600;">Team Softcapphyjas</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0d1321; border-top: 1px solid #1f2937; padding: 18px 32px; text-align: center;">
+              <img src="${FOOTER_LOGO_URL}" alt="CapFlow" width="64" height="22" style="display: block; width: 64px; height: 22px; margin: 0 auto 8px; object-fit: contain;" />
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #64748b;">&copy; ${year} Softcapphyjas Pvt. Ltd. All rights reserved.</p>
+              <p style="margin: 0; font-size: 11px; color: #475569;">This is an automated message. Please do not reply directly to this email.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `CapFlow — Monthly EMI Summary for ${month}`,
+    "=".repeat(50),
+    "",
+    `Hi ${displayName},`,
+    "",
+    "Your EMI schedule for " + month + ":",
+    "",
+    ...emis.map(
+      (e) =>
+        `  • ${e.name} — Rs.${e.monthlyCost.toLocaleString("en-IN")} (due: ${e.dueDay}${ordinalSuffix(e.dueDay)})`,
+    ),
+    "",
+    `  Total: Rs.${totalAmount.toLocaleString("en-IN")}`,
+    "",
+    "Please ensure your accounts are funded before each due date.",
+    "",
+    "Thank you,",
+    "Team Softcapphyjas",
+  ].join("\n");
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || '"CapFlow" <dev.lethwala@gmail.com>',
+    to: email,
+    subject: `Your CapFlow EMI Summary — ${month}`,
+    text,
+    html,
+  });
+
+  console.info(`[Mailer] Monthly summary sent to ${email}`);
+}
+
+// ─── Send Monthly Statement Notification (privacy-safe nudge) ─────────────────
+// Sends NO financial data — only a prompt to open the app.
+export async function sendMonthlyStatementNotification(
+  email: string,
+  name: string,
+  month: string,
+): Promise<void> {
+  const year = new Date().getFullYear();
+  const displayName = name ? name.trim() : "there";
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>Your CapFlow Monthly Summary — ${month}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #0b0f19; width: 100%; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 480px; margin: 0 auto; background-color: #111827; border: 1px solid #1f2937; border-radius: 16px; overflow: hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding: 32px 32px 16px 32px;">
+              <img src="${LOGO_URL}" alt="CapFlow" width="48" height="48" style="display: block; width: 48px; height: 48px; border-radius: 10px; margin: 0 auto 12px; object-fit: contain;" />
+              <h1 style="margin: 0; font-size: 20px; font-weight: 700; color: #ffffff;">Monthly Summary Ready</h1>
+              <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">CapFlow Financial Tracker</p>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding: 0 32px;">
+              <div style="height: 1px; background-color: #1f2937; width: 100%;"></div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding: 28px 32px 32px 32px;">
+              <p style="margin: 0 0 12px 0; font-size: 15px; color: #e2e8f0; font-weight: 500;">
+                Hi ${displayName},
+              </p>
+              <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 22px; color: #94a3b8;">
+                Your <strong style="color: #ffffff;">${month}</strong> summary is ready in CapFlow.
+                Open the app to view your income, expense, and savings totals for the month.
+              </p>
+
+              <!-- Privacy note -->
+              <div style="background-color: #0d1321; border-left: 3px solid #38bdf8; border-radius: 4px; padding: 12px 14px; margin-bottom: 24px;">
+                <p style="margin: 0; font-size: 12px; line-height: 18px; color: #94a3b8;">
+                  <strong style="color: #e2e8f0;">Privacy note:</strong> Your financial data stays on your device. This email contains no transaction details.
+                </p>
+              </div>
+
+              <p style="margin: 0; font-size: 13px; line-height: 20px; color: #94a3b8;">
+                Best regards,<br />
+                <span style="color: #e2e8f0; font-weight: 600;">Team Softcapphyjas</span>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0d1321; border-top: 1px solid #1f2937; padding: 18px 32px; text-align: center;">
+              <img src="${FOOTER_LOGO_URL}" alt="CapFlow" width="64" height="22" style="display: block; width: 64px; height: 22px; margin: 0 auto 8px; object-fit: contain;" />
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #64748b;">&copy; ${year} Softcapphyjas Pvt. Ltd. All rights reserved.</p>
+              <p style="margin: 0; font-size: 11px; color: #475569;">This is an automated message. Please do not reply directly to this email.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `CapFlow — Your ${month} Summary is Ready`,
+    "=".repeat(50),
+    "",
+    `Hi ${displayName},`,
+    "",
+    `Your ${month} summary is ready in CapFlow.`,
+    "Open the app to view your income, expense, and savings totals for the month.",
+    "",
+    "Privacy note: Your financial data stays on your device.",
+    "This email contains no transaction details.",
+    "",
+    "Thank you,",
+    "Team Softcapphyjas",
+  ].join("\n");
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || '"CapFlow" <dev.lethwala@gmail.com>',
+    to: email,
+    subject: `Your CapFlow Monthly Summary — ${month}`,
+    text,
+    html,
+  });
+
+  console.info(`[Mailer] Monthly statement notification sent to ${email}`);
+}
+
+// ─── Internal utility ─────────────────────────────────────────────────────────
+function ordinalSuffix(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] ?? s[v] ?? s[0];
 }

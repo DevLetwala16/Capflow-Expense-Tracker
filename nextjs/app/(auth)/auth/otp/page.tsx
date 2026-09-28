@@ -3,8 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Mail, CheckCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  ArrowLeft,
+  Mail,
+  ShieldCheck,
+  CheckCircle2,
+  Clock,
+  RotateCcw,
+  Loader2,
+  ArrowRight,
+} from "lucide-react";
 import { useAuthStore } from "@/lib/store/authStore";
 
 type Step = "email" | "otp";
@@ -77,6 +85,16 @@ export default function OTPPage() {
     }
   };
 
+  const handleOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").trim();
+    if (!/^\d{6}$/.test(pasted)) return;
+    const digits = pasted.split("");
+    setOtp(digits);
+    otpRefs.current[5]?.focus();
+    verifyOTP(pasted);
+  };
+
   const verifyOTP = async (code: string) => {
     setLoading(true);
     setError("");
@@ -109,152 +127,250 @@ export default function OTPPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col max-w-sm mx-auto w-full px-6 py-8">
-      {/* Back button */}
-      <button
-        onClick={() => step === "otp" ? setStep("email") : router.back()}
-        className="flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mb-8 w-fit"
-      >
-        <ArrowLeft size={18} />
-        <span className="text-sm">Back</span>
-      </button>
+    <div className="min-h-dvh flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden bg-[var(--bg-primary)]">
+      {/* Ambient background glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px] sm:w-[480px] h-[340px] sm:h-[480px] bg-indigo-500/10 rounded-full blur-[90px] pointer-events-none" />
 
-      <AnimatePresence mode="wait">
-        {success ? (
-          <motion.div
-            key="success"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex-1 flex flex-col items-center justify-center gap-4"
-          >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 200, damping: 15 }}
-            >
-              <CheckCircle size={64} className="text-[#10B981]" />
-            </motion.div>
-            <p className="text-lg font-semibold text-[var(--text-primary)]">Verified!</p>
-            <p className="text-sm text-[var(--text-secondary)]">Redirecting to your dashboard…</p>
-          </motion.div>
-        ) : step === "email" ? (
-          <motion.div
-            key="email-step"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex flex-col gap-6"
-          >
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-[#F97316]/15 flex items-center justify-center mb-4">
-                <Mail size={24} className="text-[#F97316]" />
-              </div>
-              <h1 className="text-2xl font-bold text-[var(--text-primary)]">Enter your email</h1>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">
-                {"We'll send a 6-digit code to verify it's you."}
-              </p>
-            </div>
+      <div className="w-full max-w-[420px] relative z-10">
+        {/* Back navigation */}
+        <button
+          type="button"
+          onClick={() => (step === "otp" ? setStep("email") : router.back())}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-indigo-500/30 transition-all mb-5 active:scale-95 shadow-sm"
+        >
+          <ArrowLeft size={14} />
+          <span>Back</span>
+        </button>
 
-            {/* Wrapped in <form> so browser shows email autocomplete suggestions */}
-            <form
-              onSubmit={(e) => { e.preventDefault(); requestOTP(); }}
-              className="flex flex-col gap-3"
-              autoComplete="on"
-            >
-              <input
-                type="email"
-                name="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(""); }}
-                autoComplete="email"
-                autoFocus
-                className="h-12 px-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-sm focus:outline-none focus:border-[#6366F1] transition-colors w-full"
-              />
-              {error && <p className="text-sm text-[#EF4444]">{error}</p>}
-              <button
-                type="submit"
-                disabled={loading || !email}
-                className="h-12 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        {/* Card Container */}
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative">
+          <AnimatePresence mode="wait">
+            {success ? (
+              <motion.div
+                key="success"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="py-8 flex flex-col items-center justify-center text-center space-y-3"
               >
-                {loading ? "Sending…" : "Send Code"}
-              </button>
-            </form>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="otp-step"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="flex flex-col gap-6"
-          >
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--text-primary)]">Check your email</h1>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">
-                We sent a 6-digit code to{" "}
-                <strong className="text-[var(--text-primary)]">{email}</strong>
-              </p>
-            </div>
-
-            {/* OTP Input boxes */}
-            <motion.div
-              animate={shake ? { x: [-8, 8, -8, 8, -4, 4, 0] } : {}}
-              transition={{ duration: 0.4 }}
-              className="flex gap-2 justify-center"
-            >
-              {otp.map((digit, i) => (
-                <input
-                  key={i}
-                  ref={(el) => { otpRefs.current[i] = el; }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpInput(i, e.target.value)}
-                  onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                  disabled={loading}
-                  className="w-12 h-14 text-center text-xl font-bold rounded-xl bg-[var(--bg-card)] border-2 border-[var(--border-color)] text-[var(--text-primary)] focus:border-[#6366F1] focus:outline-none transition-colors disabled:opacity-50"
-                />
-              ))}
-            </motion.div>
-
-            {error && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-sm text-[#EF4444] text-center"
-              >
-                {error}
-              </motion.p>
-            )}
-
-            {/* Resend */}
-            <div className="text-center">
-              {countdown > 0 ? (
-                <p className="text-sm text-[var(--text-secondary)]">
-                  Resend code in <strong className="text-[var(--text-primary)]">{countdown}s</strong>
+                <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+                  <CheckCircle2 size={32} />
+                </div>
+                <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                  Verification Successful!
+                </h2>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Redirecting to your dashboard...
                 </p>
-              ) : (
-                <button
-                  onClick={() => { requestOTP(); setOtp(["", "", "", "", "", ""]); }}
-                  className="text-sm text-[#6366F1] font-medium hover:underline"
-                >
-                  Resend code
-                </button>
-              )}
-            </div>
+              </motion.div>
+            ) : step === "email" ? (
+              <motion.div
+                key="email-step"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col"
+              >
+                {/* Header Icon */}
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center mx-auto mb-4 text-[#818CF8] shadow-sm shadow-indigo-500/10">
+                  <Mail size={24} />
+                </div>
 
-            <Button
-              onClick={() => verifyOTP(otp.join(""))}
-              disabled={otp.join("").length < 6 || loading}
-              className="h-12 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white font-semibold"
-            >
-              {loading ? "Verifying…" : "Verify Code"}
-            </Button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)] text-center tracking-tight">
+                  Enter your email
+                </h1>
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] text-center mt-1.5 max-w-[280px] mx-auto">
+                  We will send a 6-digit verification code to sign you in securely.
+                </p>
+
+                {/* Email Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    requestOTP();
+                  }}
+                  className="mt-6 space-y-4"
+                  autoComplete="on"
+                >
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
+                      Email Address
+                    </label>
+                    <div className="relative flex items-center">
+                      <Mail
+                        size={16}
+                        className="absolute left-3.5 text-[var(--text-secondary)] pointer-events-none"
+                      />
+                      <input
+                        type="email"
+                        name="email"
+                        placeholder="name@example.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          setError("");
+                        }}
+                        autoComplete="email"
+                        autoFocus
+                        className="w-full h-12 pl-10 pr-4 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] text-sm outline-none focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20 transition-all font-medium placeholder:text-[var(--text-secondary)]/50"
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 font-medium"
+                    >
+                      {error}
+                    </motion.div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={loading || !email.trim()}
+                    className="w-full h-12 rounded-xl bg-[#6366F1] hover:bg-[#5558E6] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25 active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Sending Code...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Send Verification Code</span>
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="otp-step"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col"
+              >
+                {/* Header Icon */}
+                <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center mx-auto mb-4 text-[#818CF8] shadow-sm shadow-indigo-500/10">
+                  <ShieldCheck size={26} />
+                </div>
+
+                <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)] text-center tracking-tight">
+                  Enter Verification Code
+                </h1>
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] text-center mt-1.5">
+                  We sent a 6-digit code to
+                  <span className="font-semibold text-[var(--text-primary)] block mt-0.5">
+                    {email}
+                  </span>
+                </p>
+                <div className="flex justify-center mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("email");
+                      setError("");
+                    }}
+                    className="text-[11px] text-[#6366F1] hover:underline font-medium"
+                  >
+                    Wrong email? Change address
+                  </button>
+                </div>
+
+                {/* 6-Digit OTP Input Boxes */}
+                <motion.div
+                  animate={shake ? { x: [-10, 10, -10, 10, -5, 5, 0] } : {}}
+                  transition={{ duration: 0.4 }}
+                  className="flex gap-2 sm:gap-2.5 justify-center my-6"
+                  onPaste={handleOtpPaste}
+                >
+                  {otp.map((digit, i) => (
+                    <input
+                      key={i}
+                      ref={(el) => {
+                        otpRefs.current[i] = el;
+                      }}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleOtpInput(i, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                      disabled={loading}
+                      className={`w-11 h-14 sm:w-12 sm:h-14 text-center text-xl font-bold rounded-xl bg-[var(--bg-primary)] border-2 transition-all outline-none ${
+                        digit
+                          ? "border-[#6366F1] text-[var(--text-primary)] bg-indigo-500/5 shadow-sm shadow-indigo-500/10"
+                          : "border-[var(--border-color)] text-[var(--text-primary)] focus:border-[#6366F1] focus:ring-2 focus:ring-[#6366F1]/20"
+                      }`}
+                    />
+                  ))}
+                </motion.div>
+
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 font-medium text-center"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
+                {/* Resend Countdown */}
+                <div className="text-center mb-5">
+                  {countdown > 0 ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
+                      <Clock size={12} className="text-[var(--text-secondary)]" />
+                      <span>Resend code in</span>
+                      <strong className="text-[var(--text-primary)] font-semibold">
+                        {countdown}s
+                      </strong>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        requestOTP();
+                        setOtp(["", "", "", "", "", ""]);
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs text-[#6366F1] font-semibold hover:underline"
+                    >
+                      <RotateCcw size={13} />
+                      <span>Resend code</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Verify Button */}
+                <button
+                  type="button"
+                  onClick={() => verifyOTP(otp.join(""))}
+                  disabled={otp.join("").length < 6 || loading}
+                  className="w-full h-12 rounded-xl bg-[#6366F1] hover:bg-[#5558E6] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25 active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Verify & Sign In</span>
+                      <CheckCircle2 size={16} />
+                    </>
+                  )}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

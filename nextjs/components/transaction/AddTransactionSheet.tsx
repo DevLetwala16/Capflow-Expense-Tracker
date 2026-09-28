@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronDown, ChevronUp, Calendar, CreditCard, FileText, Calculator, Delete } from "lucide-react";
+import { X, ChevronDown, ChevronUp, Calendar, CreditCard, FileText, Calculator, Delete, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { Category } from "@/lib/db";
 import { DynamicIcon } from "./DynamicIcon";
+import { ReceiptUpload } from "./ReceiptUpload";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
@@ -24,6 +25,7 @@ const transactionSchema = z.object({
   paymentMethod: z.enum(["cash", "credit_card", "bank_transfer", "upi"]),
   notes: z.string().optional(),
   currency: z.string(),
+  receiptImage: z.string().optional(),
 });
 
 type TransactionFormValues = z.infer<typeof transactionSchema>;
@@ -55,7 +57,8 @@ export function AddTransactionSheet({
   const [saved, setSaved] = useState(false);
   const [amountStr, setAmountStr] = useState("");
   const [showKeypad, setShowKeypad] = useState(false);
-  const { addTransaction, updateTransaction } = useTransactionStore();
+  const [receiptImage, setReceiptImage] = useState<string | undefined>(undefined);
+  const { addTransaction, updateTransaction, deleteTransaction } = useTransactionStore();
   const { user } = useAuthStore();
   const today = (() => {
     const d = new Date();
@@ -90,14 +93,17 @@ export function AddTransactionSheet({
   useEffect(() => {
     if (open) {
       setSaved(false);
-      setShowDetails(false);
       setShowKeypad(false);
       if (editTransaction) {
+        setShowDetails(true);
         Object.entries(editTransaction.data).forEach(([k, v]) => {
           setValue(k as keyof TransactionFormValues, v as never);
         });
         setAmountStr(editTransaction.data.amount > 0 ? String(editTransaction.data.amount) : "");
+        // Pre-populate receipt image from the edit data
+        setReceiptImage(editTransaction.data.receiptImage ?? undefined);
       } else {
+        setShowDetails(false);
         reset({
           type: defaultType,
           amount: 0,
@@ -106,6 +112,7 @@ export function AddTransactionSheet({
           currency,
         });
         setAmountStr("");
+        setReceiptImage(undefined);
       }
     }
   }, [open, defaultType, currency, prefillDate, editTransaction, reset, setValue, today]);
@@ -155,10 +162,12 @@ export function AddTransactionSheet({
   const onSubmit = async (data: TransactionFormValues) => {
     setSaving(true);
     try {
+      // Merge receiptImage (managed outside RHF to avoid re-renders) into payload
+      const payload = { ...data, receiptImage };
       if (editTransaction) {
-        await updateTransaction(editTransaction.id, data);
+        await updateTransaction(editTransaction.id, payload);
       } else {
-        await addTransaction(data, user?.id ?? "anonymous");
+        await addTransaction(payload, user?.id ?? "anonymous");
       }
       setSaved(true);
       setTimeout(() => {
@@ -217,13 +226,30 @@ export function AddTransactionSheet({
               <h2 className="text-base font-bold text-[var(--text-primary)]">
                 {editTransaction ? "Edit Transaction" : "Record Transaction"}
               </h2>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center hover:bg-[var(--bg-card-hover)] transition-colors"
-                aria-label="Close"
-              >
-                <X size={15} className="text-[var(--text-secondary)]" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {editTransaction && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (window.confirm("Delete this transaction?")) {
+                        await deleteTransaction(editTransaction.id);
+                        onClose();
+                      }
+                    }}
+                    className="w-8 h-8 rounded-full bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/20 flex items-center justify-center hover:bg-[#EF4444]/20 transition-colors"
+                    aria-label="Delete transaction"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center hover:bg-[var(--bg-card-hover)] transition-colors"
+                  aria-label="Close"
+                >
+                  <X size={15} className="text-[var(--text-secondary)]" />
+                </button>
+              </div>
             </div>
 
             {/* Type Switcher Pill */}
@@ -471,6 +497,17 @@ export function AddTransactionSheet({
                         placeholder="Add a remark or note…"
                         rows={2}
                         className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#6366F1] resize-none"
+                      />
+                    </div>
+
+                    {/* Receipt Upload — B4 section, after Notes */}
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">
+                        <span>Receipt</span>
+                      </label>
+                      <ReceiptUpload
+                        value={receiptImage}
+                        onChange={setReceiptImage}
                       />
                     </div>
                   </motion.div>

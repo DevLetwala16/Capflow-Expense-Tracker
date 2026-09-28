@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
@@ -67,7 +67,12 @@ export function TransactionRow({ transaction, categories, currency, onEdit, onDe
         dragConstraints={{ left: -88, right: 0 }}
         dragElastic={0.1}
         style={{ x }}
-        className="flex items-center gap-3 p-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl cursor-grab active:cursor-grabbing"
+        onClick={() => {
+          if (Math.abs(x.get()) < 6 && transaction.id) {
+            onEdit(transaction.id);
+          }
+        }}
+        className="flex items-center gap-3 p-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl cursor-pointer hover:border-[#6366F1]/50 transition-colors"
       >
         {/* Category icon */}
         <div
