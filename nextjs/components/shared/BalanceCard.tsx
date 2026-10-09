@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, Layers } from "lucide-react";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
@@ -20,7 +20,10 @@ function formatAmount(amount: number = 0, currency: string = "INR"): string {
 interface BalanceCardProps {
   income?: number;
   expense?: number;
+  /** Month-only net — still accepted but no longer shown as the 3rd stat */
   savings?: number;
+  /** All-time cumulative balance (sum of every income − expense ever recorded) */
+  cumulativeBalance?: number;
   spentPercent?: number;
   currency?: string;
   loading?: boolean;
@@ -29,7 +32,7 @@ interface BalanceCardProps {
 export function BalanceCard({
   income = 0,
   expense = 0,
-  savings = 0,
+  cumulativeBalance = 0,
   spentPercent = 0,
   currency = "INR",
   loading = false,
@@ -37,7 +40,9 @@ export function BalanceCard({
   const safeSpent = Math.max(0, Math.min(100, Number.isFinite(spentPercent) ? spentPercent : 0));
   const safeIncome = Number.isFinite(income) ? income : 0;
   const safeExpense = Number.isFinite(expense) ? expense : 0;
-  const safeSavings = Number.isFinite(savings) ? savings : safeIncome - safeExpense;
+  const safeCumulative = Number.isFinite(cumulativeBalance) ? cumulativeBalance : 0;
+
+  const isNegative = safeCumulative < 0;
 
   return (
     <div
@@ -49,7 +54,8 @@ export function BalanceCard({
 
       {/* 3-Column Stats Row */}
       <div className="grid grid-cols-3 gap-2 mb-4 relative z-10">
-        {/* Income */}
+
+        {/* Income — this month */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
             <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
@@ -60,9 +66,10 @@ export function BalanceCard({
           <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
             {formatAmount(safeIncome, currency)}
           </p>
+          <p className="text-[9px] text-white/50 mt-0.5">This month</p>
         </div>
 
-        {/* Expense */}
+        {/* Expense — this month */}
         <div className="text-center border-x border-white/20 px-1">
           <div className="flex items-center justify-center gap-1 mb-1">
             <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
@@ -73,30 +80,32 @@ export function BalanceCard({
           <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
             {formatAmount(safeExpense, currency)}
           </p>
+          <p className="text-[9px] text-white/50 mt-0.5">This month</p>
         </div>
 
-        {/* Net */}
+        {/* Balance — cumulative all-time */}
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-1">
             <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center">
-              <Wallet size={10} className="text-white" />
+              <Layers size={10} className="text-white" />
             </div>
-            <span className="text-[10px] text-white/80 font-medium tracking-wide">Net</span>
+            <span className="text-[10px] text-white/80 font-medium tracking-wide">Balance</span>
           </div>
           <p
             className={`text-base font-bold transition-opacity ${
-              safeSavings >= 0 ? "text-white" : "text-rose-200"
+              isNegative ? "text-rose-200" : "text-white"
             } ${loading ? "opacity-60" : "opacity-100"}`}
           >
-            {safeSavings >= 0 ? "" : "-"}{formatAmount(Math.abs(safeSavings), currency)}
+            {isNegative ? "-" : ""}{formatAmount(Math.abs(safeCumulative), currency)}
           </p>
+          <p className="text-[9px] text-white/50 mt-0.5">All time</p>
         </div>
       </div>
 
-      {/* Progress Bar Section */}
+      {/* Progress Bar — spent vs this month's income */}
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-1.5">
-          <span className="text-[10px] text-white/80 font-medium">Spent of Income</span>
+          <span className="text-[10px] text-white/80 font-medium">Spent of Month&apos;s Income</span>
           <span className="text-[10px] text-white font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
             {Math.round(safeSpent)}%
           </span>

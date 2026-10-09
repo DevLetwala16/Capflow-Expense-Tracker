@@ -27,13 +27,7 @@ interface TransactionDetailSheetProps {
   onDelete: (id: number) => Promise<void>;
 }
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  INR: "₹",
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  JPY: "¥",
-};
+import { CURRENCY_SYMBOLS, convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: "Cash",
@@ -56,9 +50,17 @@ export function TransactionDetailSheet({
 
   if (!transaction) return null;
 
+  const rates = useExchangeRateStore((s) => s.rates);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
   const category = categories.find((c) => c.id === transaction.categoryId);
   const isIncome = transaction.type === "income";
+
+  const txCurrency = transaction.currency || currency;
+  const isDiffCurrency = txCurrency.toUpperCase() !== currency.toUpperCase();
+  const displayAmount = isDiffCurrency
+    ? convertCurrency(transaction.amount, txCurrency, currency, rates)
+    : transaction.amount;
+  const origSymbol = CURRENCY_SYMBOLS[txCurrency] || txCurrency;
 
   const formattedDate = (() => {
     try {
@@ -151,7 +153,7 @@ export function TransactionDetailSheet({
                   </h3>
 
                   {/* Amount Display */}
-                  <div className="flex items-center justify-center gap-1 my-1">
+                  <div className="flex flex-col items-center justify-center my-1">
                     <span
                       className={`text-3xl font-extrabold ${
                         isIncome ? "text-[#10B981]" : "text-[#EF4444]"
@@ -159,8 +161,13 @@ export function TransactionDetailSheet({
                     >
                       {isIncome ? "+" : "-"}
                       {symbol}
-                      {transaction.amount.toLocaleString("en-IN")}
+                      {displayAmount.toLocaleString()}
                     </span>
+                    {isDiffCurrency && (
+                      <span className="text-xs text-[var(--text-secondary)] font-medium mt-1 bg-[var(--bg-card)] px-2.5 py-0.5 rounded-full border border-[var(--border-color)]">
+                        Original: {origSymbol}{transaction.amount.toLocaleString()} {txCurrency}
+                      </span>
+                    )}
                   </div>
 
                   {/* Type Badge */}

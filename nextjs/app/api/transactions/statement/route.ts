@@ -8,6 +8,8 @@ import {
   PDFTransactionItem,
 } from "@/lib/email/transactionStatementPdf";
 
+export const dynamic = "force-dynamic";
+
 // ─── Shared email config ──────────────────────────────────────────────────────
 const LOGO_URL =
   "https://drive.google.com/uc?export=view&id=1nkfmfUBXiqwKlRqRkp3mfax1s8sS78aJ";

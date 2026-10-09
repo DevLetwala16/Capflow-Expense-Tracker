@@ -11,37 +11,12 @@ import { AddBudgetSheet } from "@/components/budgets/AddBudgetSheet";
 import { AddGoalSheet } from "@/components/budgets/AddGoalSheet";
 import { BudgetDrilldownSheet } from "@/components/budgets/BudgetDrilldownSheet";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
+import { AnimatedProgressRing } from "@/components/shared/AnimatedProgressRing";
 import { format, parseISO } from "date-fns";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
 };
-
-// ─── Circular Progress Ring ───────────────────────────────────────────────────
-
-function CircleRing({ percent, color, size = 52 }: { percent: number; color: string; size?: number }) {
-  const r = (size - 8) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (percent / 100) * circ;
-  return (
-    <svg width={size} height={size} className="-rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={6} stroke="var(--border-color)" />
-      <motion.circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        strokeWidth={6}
-        stroke={color}
-        strokeLinecap="round"
-        strokeDasharray={circ}
-        initial={{ strokeDashoffset: circ }}
-        animate={{ strokeDashoffset: offset }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
-      />
-    </svg>
-  );
-}
 
 // ─── Add Funds Modal ──────────────────────────────────────────────────────────
 
@@ -196,14 +171,15 @@ export default function BudgetsPage() {
                       whileTap={{ scale: 0.98 }}
                     >
                       <div className="flex items-center gap-3">
-                        {/* Circle ring */}
-                        <div className="relative flex-shrink-0">
-                          <CircleRing percent={percent} color={barColor} />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-[9px] font-bold" style={{ color: barColor }}>
-                              {Math.round(percent)}%
-                            </span>
-                          </div>
+                        {/* Progress ring */}
+                        <div className="flex-shrink-0">
+                          <AnimatedProgressRing
+                            percent={percent}
+                            size={52}
+                            strokeWidth={6}
+                            label={`${Math.round(percent)}%`}
+                            color={barColor}
+                          />
                         </div>
 
                         <div className="flex-1 min-w-0">

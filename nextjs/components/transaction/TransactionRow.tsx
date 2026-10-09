@@ -1,15 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
 import { Edit3, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Transaction, Category } from "@/lib/db";
 import { DynamicIcon } from "@/components/shared/DynamicIcon";
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
-};
+import { CURRENCY_SYMBOLS, convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
 
 interface TransactionRowProps {
   transaction: Transaction;
@@ -19,11 +16,19 @@ interface TransactionRowProps {
   onDelete: (id: number) => Promise<void>;
 }
 
-export function TransactionRow({ transaction, categories, currency, onEdit, onDelete }: TransactionRowProps) {
+export const TransactionRow = memo(function TransactionRow({ transaction, categories, currency, onEdit, onDelete }: TransactionRowProps) {
   const [deleting, setDeleting] = useState(false);
   const x = useMotionValue(0);
   const bgOpacity = useTransform(x, [-80, 0], [1, 0]);
+  const rates = useExchangeRateStore((s) => s.rates);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
+
+  const txCurrency = transaction.currency || currency;
+  const isDiffCurrency = txCurrency.toUpperCase() !== currency.toUpperCase();
+  const displayAmount = isDiffCurrency
+    ? convertCurrency(transaction.amount, txCurrency, currency, rates)
+    : transaction.amount;
+  const origSymbol = CURRENCY_SYMBOLS[txCurrency] || txCurrency;
 
   const category = categories.find((c) => c.id === transaction.categoryId);
 
@@ -111,10 +116,15 @@ export function TransactionRow({ transaction, categories, currency, onEdit, onDe
         <div className="text-right flex-shrink-0">
           <p className={`text-sm font-bold ${transaction.type === "income" ? "text-[#10B981]" : "text-[#EF4444]"}`}>
             {transaction.type === "income" ? "+" : "-"}{symbol}
-            {transaction.amount.toLocaleString("en-IN")}
+            {displayAmount.toLocaleString()}
           </p>
+          {isDiffCurrency && (
+            <p className="text-[10px] text-[var(--text-secondary)] font-medium">
+              ({origSymbol}{transaction.amount.toLocaleString()} {txCurrency})
+            </p>
+          )}
         </div>
       </motion.div>
     </div>
   );
-}
+});

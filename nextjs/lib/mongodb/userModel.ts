@@ -1,10 +1,12 @@
-﻿import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IUser extends Document {
   email: string;
   name: string;
   avatar?: string;
   googleId?: string;
+  facebookId?: string;
+  appleId?: string;
   otpHash?: string;
   otpExpiry?: Date;
   preferences: {
@@ -24,6 +26,8 @@ const UserSchema = new Schema<IUser>(
     name: { type: String, required: true },
     avatar: { type: String },
     googleId: { type: String, sparse: true },
+    facebookId: { type: String, sparse: true },
+    appleId: { type: String, sparse: true },
     otpHash: { type: String },
     otpExpiry: { type: Date },
     preferences: {

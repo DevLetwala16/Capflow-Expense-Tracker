@@ -74,6 +74,8 @@ export default function CalendarPage() {
   const symbol = CURRENCY_SYMBOLS[defaultCurrency] || defaultCurrency;
 
   const todayStr = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
+
+  // Always initialise to today — stale-month correction lives in settingsStore (resolveMonth)
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
   const [monthTransactions, setMonthTransactions] = useState<Transaction[]>([]);

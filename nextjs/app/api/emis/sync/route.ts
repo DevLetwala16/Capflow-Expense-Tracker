@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
 
+export const dynamic = "force-dynamic";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SyncRequestBody {
   emiId: number;

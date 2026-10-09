@@ -5,6 +5,8 @@ import User from "@/lib/mongodb/userModel";
 import nodemailer from "nodemailer";
 import { generateEMIStatementPDF } from "@/lib/email/statementPdf";
 
+export const dynamic = "force-dynamic";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface EMIEmailRequestBody {

@@ -4,6 +4,8 @@ import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import { sendEMIReminder } from "@/lib/email/mailer";
 
+export const dynamic = "force-dynamic";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SendReminderBody {

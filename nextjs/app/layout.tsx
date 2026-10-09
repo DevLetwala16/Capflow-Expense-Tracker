@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/shared/ThemeProvider";
+import { SkipToContent } from "@/components/shared/SkipToContent";
 
 export const metadata: Metadata = {
   title: "CapFlow — Expense Tracker",
   description: "Smart mobile-first expense tracker. All data stays on your device.",
   manifest: "/manifest.json",
+  keywords: ["expense tracker", "budget", "finance", "PWA", "offline"],
   icons: {
     icon: [
       { url: "/capflow-logo.png", type: "image/png" },
@@ -19,6 +21,11 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: "CapFlow",
+  },
+  openGraph: {
+    title: "CapFlow — Expense Tracker",
+    description: "Smart mobile-first expense tracker. All data stays on your device.",
+    type: "website",
   },
 };
 
@@ -44,13 +51,17 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       <body>
+        {/* ── Accessibility: skip navigation for keyboard users (Step 4.5) ── */}
+        <SkipToContent />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange={false}
         >
-          {children}
+          <div id="main-content">
+            {children}
+          </div>
         </ThemeProvider>
       </body>
     </html>

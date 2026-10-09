@@ -3,6 +3,8 @@ import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import { sendMonthlyStatementNotification } from "@/lib/email/mailer";
 
+export const dynamic = "force-dynamic";
+
 // ─── GET /api/cron/monthly-statement ─────────────────────────────────────────
 // Callable by Vercel Cron (00:10 UTC on the 1st of each month) or manual GET.
 //

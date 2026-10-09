@@ -1,7 +1,9 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {

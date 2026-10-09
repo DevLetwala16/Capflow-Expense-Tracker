@@ -4,6 +4,8 @@ import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
 import { sendMonthlySummaryEmail } from "@/lib/email/mailer";
 
+export const dynamic = "force-dynamic";
+
 // ─── GET /api/cron/monthly-summary ───────────────────────────────────────────
 // Callable by Vercel Cron (00:05 UTC on the 1st of each month) or manual GET.
 // Sends each eligible user a summary of all their EMIs for the current month.

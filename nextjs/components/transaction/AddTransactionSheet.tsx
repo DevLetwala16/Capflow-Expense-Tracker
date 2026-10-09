@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronDown, ChevronUp, Calendar, CreditCard, FileText, Calculator, Delete, Trash2 } from "lucide-react";
+import { X, ChevronDown, ChevronUp, Calendar, CreditCard, FileText, Calculator, Delete, Trash2, ArrowRightLeft } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,10 +11,8 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { Category } from "@/lib/db";
 import { DynamicIcon } from "./DynamicIcon";
 import { ReceiptUpload } from "./ReceiptUpload";
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
-};
+import { CurrencySelectorModal } from "@/components/shared/CurrencySelectorModal";
+import { CURRENCY_SYMBOLS, convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
 
 const transactionSchema = z.object({
   type: z.enum(["expense", "income"]),
@@ -58,6 +56,12 @@ export function AddTransactionSheet({
   const [amountStr, setAmountStr] = useState("");
   const [showKeypad, setShowKeypad] = useState(false);
   const [receiptImage, setReceiptImage] = useState<string | undefined>(undefined);
+
+  // Multi-currency selection and live conversion state
+  const [selectedCurrency, setSelectedCurrency] = useState(currency || "INR");
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [conversionNotice, setConversionNotice] = useState<string | null>(null);
+
   const { addTransaction, updateTransaction, deleteTransaction } = useTransactionStore();
   const { user } = useAuthStore();
   const today = (() => {
@@ -82,7 +86,7 @@ export function AddTransactionSheet({
       amount: 0,
       date: today,
       paymentMethod: "cash",
-      currency: currency,
+      currency: currency || "INR",
     },
   });
 
@@ -99,23 +103,52 @@ export function AddTransactionSheet({
         Object.entries(editTransaction.data).forEach(([k, v]) => {
           setValue(k as keyof TransactionFormValues, v as never);
         });
+        const editCurr = editTransaction.data.currency || currency || "INR";
+        setSelectedCurrency(editCurr);
+        setValue("currency", editCurr);
+        setConversionNotice(null);
         setAmountStr(editTransaction.data.amount > 0 ? String(editTransaction.data.amount) : "");
-        // Pre-populate receipt image from the edit data
         setReceiptImage(editTransaction.data.receiptImage ?? undefined);
       } else {
         setShowDetails(false);
+        const initCurr = currency || "INR";
+        setSelectedCurrency(initCurr);
+        setConversionNotice(null);
         reset({
           type: defaultType,
           amount: 0,
           date: prefillDate ?? today,
           paymentMethod: "cash",
-          currency,
+          currency: initCurr,
         });
         setAmountStr("");
         setReceiptImage(undefined);
       }
     }
   }, [open, defaultType, currency, prefillDate, editTransaction, reset, setValue, today]);
+
+  const handleCurrencySelect = (newCode: string) => {
+    if (newCode.toUpperCase() === selectedCurrency.toUpperCase()) {
+      setShowCurrencyPicker(false);
+      return;
+    }
+    const oldCode = selectedCurrency;
+    const currentNum = parseFloat(amountStr) || 0;
+    setSelectedCurrency(newCode);
+    setValue("currency", newCode);
+    setShowCurrencyPicker(false);
+
+    if (currentNum > 0) {
+      const rates = useExchangeRateStore.getState().rates;
+      const converted = convertCurrency(currentNum, oldCode, newCode, rates);
+      setAmountStr(String(converted));
+      setValue("amount", converted, { shouldValidate: true });
+      setConversionNotice(
+        `Converted ${currentNum} ${oldCode} → ${converted} ${newCode} at real rate`
+      );
+      setTimeout(() => setConversionNotice(null), 8000);
+    }
+  };
 
   const handleAmountChange = (val: string) => {
     // Keep numbers and single decimal point
@@ -285,9 +318,25 @@ export function AddTransactionSheet({
             >
               {/* Amount Box */}
               <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-3 text-center">
+                {/* Currency Switcher Pill */}
+                <div className="flex items-center justify-center mb-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrencyPicker(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--bg-card-hover)] border border-[var(--border-color)] hover:border-[#6366F1] text-xs font-bold text-[var(--text-primary)] transition-all cursor-pointer shadow-sm active:scale-95"
+                    title="Change currency (auto-converts amount at live rate)"
+                  >
+                    <span className="text-sm font-extrabold text-[#6366F1]">
+                      {CURRENCY_SYMBOLS[selectedCurrency] || selectedCurrency}
+                    </span>
+                    <span>{selectedCurrency}</span>
+                    <ChevronDown size={12} className="text-[var(--text-secondary)]" />
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-center gap-1.5">
                   <span className="text-2xl sm:text-3xl font-extrabold text-[var(--text-secondary)]">
-                    {symbol}
+                    {CURRENCY_SYMBOLS[selectedCurrency] || selectedCurrency}
                   </span>
                   <input
                     type="text"
@@ -300,6 +349,20 @@ export function AddTransactionSheet({
                     autoFocus
                   />
                 </div>
+
+                {/* Real-time Currency Conversion Notice */}
+                {conversionNotice && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="mt-2 py-1 px-3 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/25 text-[11px] font-semibold text-[#6366F1] inline-flex items-center gap-1.5"
+                  >
+                    <ArrowRightLeft size={11} />
+                    <span>{conversionNotice}</span>
+                  </motion.div>
+                )}
+
                 {errors.amount && (
                   <p className="text-xs text-[#EF4444] font-medium mt-1">
                     {errors.amount.message}
@@ -543,6 +606,16 @@ export function AddTransactionSheet({
             </div>
           </motion.div>
         </div>
+
+        {/* Multi-Currency Auto-Conversion Modal */}
+        <CurrencySelectorModal
+          open={showCurrencyPicker}
+          onClose={() => setShowCurrencyPicker(false)}
+          currentCode={selectedCurrency}
+          onSelect={handleCurrencySelect}
+          title="Transaction Currency"
+          subtitle="Amounts auto-convert at live exchange rates (3h cache)"
+        />
       </>
     )}
   </AnimatePresence>

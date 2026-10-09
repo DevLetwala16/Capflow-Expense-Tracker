@@ -11,8 +11,10 @@ import { useSettingsStore, rehydrateSettings } from "@/lib/store/settingsStore";
 import { rehydrateWalkthrough } from "@/lib/store/walkthroughStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { DesktopSidebar } from "@/components/shared/DesktopSidebar";
+import { PWAInstallBanner } from "@/components/shared/PWAInstallBanner";
 
 import { useEMIStore } from "@/lib/store/emiStore";
+import { useExchangeRateStore } from "@/lib/currency/exchangeRates";
 
 const NAV_ITEMS = [
   { href: "/dashboard",    icon: Home,         label: "Home" },
@@ -50,6 +52,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount to recover session
+
+  useEffect(() => {
+    // Warm up exchange rates (auto-checks 3h cache TTL)
+    useExchangeRateStore.getState().fetchRates().catch(() => {});
+
+    // Check periodically to refresh if 3 hours have passed
+    const interval = setInterval(() => {
+      useExchangeRateStore.getState().fetchRates().catch(() => {});
+    }, 20 * 60 * 1000); // Check every 20 mins
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -117,6 +131,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           );
         })}
       </nav>
+      {/* ── PWA Install Prompt Banner ── */}
+      <PWAInstallBanner />
     </div>
   );
 }

@@ -33,6 +33,7 @@ export default function DashboardPage() {
     netSavings,
     recent,
     weeklyTotals,
+    cumulativeBalance,
   } = useTransactionStore();
 
   const { defaultCurrency, selectedMonth, setSelectedMonth } = useSettingsStore();
@@ -52,6 +53,7 @@ export default function DashboardPage() {
   const recentTxs = recent();
   const weekly = weeklyTotals();
   const spentPercent = income > 0 ? Math.min(Math.round((expense / income) * 100), 100) : 0;
+
 
   const navigateMonth = (dir: "prev" | "next") => {
     const newDate = dir === "prev" ? subMonths(currentDate, 1) : addMonths(currentDate, 1);
@@ -149,6 +151,7 @@ export default function DashboardPage() {
                 income={income}
                 expense={expense}
                 savings={savings}
+                cumulativeBalance={cumulativeBalance}
                 spentPercent={spentPercent}
                 currency={defaultCurrency}
                 loading={loading}

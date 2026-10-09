@@ -4,6 +4,8 @@ import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
 import { sendEMIReminder } from "@/lib/email/mailer";
 
+export const dynamic = "force-dynamic";
+
 // ─── GET /api/cron/emi-reminders ──────────────────────────────────────────────
 // Callable by Vercel Cron (daily at 08:00 UTC) or a manual HTTP GET.
 // Sends EMI due-date reminder emails to users who have opted in.

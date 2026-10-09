@@ -5,9 +5,15 @@ interface SettingsState {
   defaultCurrency: string;
   theme: 'light' | 'dark' | 'system';
   selectedMonth: string; // "YYYY-MM"
+  notifEMIReminders: boolean;
+  notifEMISync: boolean;
+  notifMonthlyStatement: boolean;
   setDefaultCurrency: (currency: string) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setSelectedMonth: (month: string) => void;
+  setNotifEMIReminders: (val: boolean) => void;
+  setNotifEMISync: (val: boolean) => void;
+  setNotifMonthlyStatement: (val: boolean) => void;
 }
 
 function getCurrentLocalMonth(): string {
@@ -15,6 +21,25 @@ function getCurrentLocalMonth(): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
+}
+
+/**
+ * Ensures the stored month is never in the past.
+ *
+ * Rule: if the user had "2026-09" persisted and today is "2026-10",
+ * auto-advance to "2026-10" so the calendar/dashboard always open
+ * on the current month after a month boundary is crossed.
+ *
+ * A month is "stale" when it is strictly earlier than today's month.
+ * Future months (manually navigated forward) are preserved as-is.
+ */
+function resolveMonth(stored: string | null | undefined): string {
+  const today = getCurrentLocalMonth();
+  if (!stored || typeof stored !== 'string' || !/^\d{4}-\d{2}$/.test(stored)) {
+    return today;
+  }
+  // Only auto-advance if stored month is strictly in the past
+  return stored < today ? today : stored;
 }
 
 /**
@@ -39,14 +64,29 @@ export const useSettingsStore = create<SettingsState>()(
       defaultCurrency: 'INR',
       theme: 'system',
       selectedMonth: getCurrentLocalMonth(),
+      notifEMIReminders: false,
+      notifEMISync: false,
+      notifMonthlyStatement: false,
 
       setDefaultCurrency: (currency) => set({ defaultCurrency: currency }),
       setTheme: (theme) => set({ theme }),
       setSelectedMonth: (month) => set({ selectedMonth: month }),
+      setNotifEMIReminders: (val) => set({ notifEMIReminders: val }),
+      setNotifEMISync: (val) => set({ notifEMISync: val }),
+      setNotifMonthlyStatement: (val) => set({ notifMonthlyStatement: val }),
     }),
     {
       name: 'capflow-settings', // overridden at runtime via rehydrateSettings
       storage: createJSONStorage(() => localStorage),
+      // After Zustand rehydrates from localStorage, correct any stale month
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          const corrected = resolveMonth(state.selectedMonth);
+          if (corrected !== state.selectedMonth) {
+            state.selectedMonth = corrected;
+          }
+        }
+      },
     }
   )
 );
@@ -65,6 +105,9 @@ export function rehydrateSettings(userId: string | null | undefined): void {
     defaultCurrency: 'INR',
     theme: 'system' as const,
     selectedMonth: getCurrentLocalMonth(),
+    notifEMIReminders: false,
+    notifEMISync: false,
+    notifMonthlyStatement: false,
   };
   if (raw) {
     try {
@@ -73,7 +116,11 @@ export function rehydrateSettings(userId: string | null | undefined): void {
       useSettingsStore.setState({
         defaultCurrency: stored.defaultCurrency ?? defaults.defaultCurrency,
         theme: (stored.theme as SettingsState['theme']) ?? defaults.theme,
-        selectedMonth: stored.selectedMonth ?? defaults.selectedMonth,
+        // ← resolveMonth prevents a stale past month from being restored
+        selectedMonth: resolveMonth(stored.selectedMonth),
+        notifEMIReminders: stored.notifEMIReminders ?? defaults.notifEMIReminders,
+        notifEMISync: stored.notifEMISync ?? defaults.notifEMISync,
+        notifMonthlyStatement: stored.notifMonthlyStatement ?? defaults.notifMonthlyStatement,
       });
     } catch {
       useSettingsStore.setState(defaults);
@@ -89,6 +136,9 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         defaultCurrency: state.defaultCurrency,
         theme: state.theme,
         selectedMonth: state.selectedMonth,
+        notifEMIReminders: state.notifEMIReminders,
+        notifEMISync: state.notifEMISync,
+        notifMonthlyStatement: state.notifMonthlyStatement,
       },
       version: 0,
     };

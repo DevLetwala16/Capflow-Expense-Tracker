@@ -4,6 +4,8 @@ import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import { sendOTPEmail } from "@/lib/email/mailer";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
