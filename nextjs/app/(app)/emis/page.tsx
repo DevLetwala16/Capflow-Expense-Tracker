@@ -23,6 +23,7 @@ import {
 import { useEMIStore } from "@/lib/store/emiStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { AddEditEMISheet } from "@/components/emis/AddEditEMISheet";
+import { ModuleLoader } from "@/components/shared/ModuleLoader";
 import { EMI } from "@/lib/db";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -637,13 +638,13 @@ export default function EMIsPage() {
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="px-4 py-5 space-y-3">
-        {/* Loading skeletons */}
+        {/* Loading state */}
         {isLoading && (
-          <div className="space-y-3">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
+          <ModuleLoader
+            title="Loading EMI Portfolio..."
+            description="Calculating payment schedules and upcoming dues..."
+            variant="card"
+          />
         )}
 
         {/* Loaded + has EMIs */}

@@ -12,6 +12,7 @@ import { rehydrateWalkthrough } from "@/lib/store/walkthroughStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { DesktopSidebar } from "@/components/shared/DesktopSidebar";
 import { PWAInstallBanner } from "@/components/shared/PWAInstallBanner";
+import { RouteLoadingBar } from "@/components/shared/RouteLoadingBar";
 
 import { useEMIStore } from "@/lib/store/emiStore";
 import { useExchangeRateStore } from "@/lib/currency/exchangeRates";
@@ -92,6 +93,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell flex flex-col md:flex-row min-h-screen bg-[var(--bg-primary)]">
+      {/* ── Instant Route Loading Bar ── */}
+      <RouteLoadingBar />
+
       {/* ── Desktop Navigation Sidebar (Hidden on mobile, visible on laptop/PC) ── */}
       <DesktopSidebar />
 

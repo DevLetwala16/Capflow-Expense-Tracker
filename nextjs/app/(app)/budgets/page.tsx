@@ -12,6 +12,7 @@ import { AddGoalSheet } from "@/components/budgets/AddGoalSheet";
 import { BudgetDrilldownSheet } from "@/components/budgets/BudgetDrilldownSheet";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AnimatedProgressRing } from "@/components/shared/AnimatedProgressRing";
+import { ModuleLoader } from "@/components/shared/ModuleLoader";
 import { format, parseISO } from "date-fns";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -84,7 +85,7 @@ function AddFundsModal({
 export default function BudgetsPage() {
   const { defaultCurrency, selectedMonth } = useSettingsStore();
   const { transactions } = useTransactionStore();
-  const { budgets, goals, deleteBudget, deleteGoal, addFundsToGoal } = useBudgetStore();
+  const { budgets, goals, loading, deleteBudget, deleteGoal, addFundsToGoal } = useBudgetStore();
   const { categories } = useCategoryStore();
 
   const [showAddBudget, setShowAddBudget] = useState(false);
@@ -122,10 +123,17 @@ export default function BudgetsPage() {
       </header>
 
       {/* Main Container: 1 col on mobile, 2 col on laptop/PC */}
-      <div className="px-4 pb-8 pt-4 md:py-6 space-y-6 md:space-y-0">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {/* ── Budgets Section (Exact same cards, buttons, and fonts) ── */}
-          <section>
+      {loading ? (
+        <ModuleLoader
+          title="Loading Budgets & Goals..."
+          description="Calculating your spending limits and target milestones..."
+          variant="module"
+        />
+      ) : (
+        <div className="px-4 pb-8 pt-4 md:py-6 space-y-6 md:space-y-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {/* ── Budgets Section (Exact same cards, buttons, and fonts) ── */}
+            <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">This Month's Budgets</h2>
               <button
@@ -330,8 +338,9 @@ export default function BudgetsPage() {
               </div>
             )}
           </section>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Sheets */}
       <AddBudgetSheet

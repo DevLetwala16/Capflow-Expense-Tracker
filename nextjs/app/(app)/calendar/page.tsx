@@ -31,6 +31,7 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
 import { TransactionDetailSheet } from "@/components/transaction/TransactionDetailSheet";
+import { ModuleLoader } from "@/components/shared/ModuleLoader";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -310,8 +311,15 @@ export default function CalendarPage() {
       </header>
 
       {/* ── Main Container: 1 column on mobile, 2 columns on laptop/PC ── */}
-      <div className="px-2 pt-2 pb-12 md:px-4 md:py-6 md:pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 items-start">
+      {loading ? (
+        <ModuleLoader
+          title="Loading Financial Calendar..."
+          description="Compiling your daily transactions and monthly totals..."
+          variant="module"
+        />
+      ) : (
+        <div className="px-2 pt-2 pb-12 md:px-4 md:py-6 md:pb-8">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 items-start">
           {/* ── Google Calendar Month Grid (Exact same grid, pills, dots) ── */}
           <div className="md:col-span-7 lg:col-span-7 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] overflow-hidden shadow-sm">
             {weeks.map((week, wi) => (
@@ -565,6 +573,7 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Transaction Detail Sheet (Read-Only Info View) */}
       <TransactionDetailSheet

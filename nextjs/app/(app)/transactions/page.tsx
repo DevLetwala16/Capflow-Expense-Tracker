@@ -12,6 +12,7 @@ import { TransactionRow } from "@/components/transaction/TransactionRow";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
 import { TransactionDetailSheet } from "@/components/transaction/TransactionDetailSheet";
 import { TransactionStatementSheet } from "@/components/transaction/TransactionStatementSheet";
+import { ModuleLoader } from "@/components/shared/ModuleLoader";
 import { Transaction } from "@/lib/db";
 
 type FilterType = "all" | "expense" | "income";
@@ -125,11 +126,11 @@ export default function TransactionsPage() {
 
       <div className="px-4 pb-8 space-y-4 md:py-6 max-w-4xl mx-auto">
         {loading ? (
-          <div className="space-y-3 pt-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-16 skeleton rounded-xl" />
-            ))}
-          </div>
+          <ModuleLoader
+            title="Loading Transactions..."
+            description="Fetching your latest transaction records from offline storage..."
+            variant="card"
+          />
         ) : grouped.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">🔍</p>
