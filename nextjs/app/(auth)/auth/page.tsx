@@ -1,9 +1,9 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Mail, ArrowRight } from "lucide-react";
-import { Suspense } from "react";
 import Image from "next/image";
 
 function ConcentricBackground() {
@@ -46,10 +46,34 @@ function ConcentricBackground() {
   );
 }
 
-function AuthContent() {
+function OAuthErrorBanner() {
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get("error");
+      if (err) {
+        setOauthError(err);
+      }
+    }
+  }, []);
+
+  if (!oauthError) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full mb-5 p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs text-[#EF4444] text-center"
+    >
+      {oauthError}
+    </motion.div>
+  );
+}
+
+export default function AuthPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const oauthError = searchParams.get("error");
 
   const handleGoogleAuth = () => {
     window.location.href = "/api/auth/google";
@@ -87,15 +111,7 @@ function AuthContent() {
             </motion.div>
 
             {/* OAuth error banner */}
-            {oauthError && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full mb-5 p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs text-[#EF4444] text-center"
-              >
-                {oauthError}
-              </motion.div>
-            )}
+            <OAuthErrorBanner />
 
             {/* Auth Buttons */}
             <motion.div
@@ -181,21 +197,10 @@ function AuthContent() {
 
           {/* Footer Note */}
           <div className="w-full text-center mt-8 md:mt-8 pt-4 pb-2 text-xs text-zinc-500 leading-relaxed">
-            All your financial data is stored only on this device.{" "}
-            <span className="text-indigo-400 font-medium">
-              Never uploaded to any server.
-            </span>
+            All your financial data is stored only on this device. <span className="text-indigo-400 font-medium">Never uploaded to any server.</span>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-export default function AuthPage() {
-  return (
-    <Suspense fallback={null}>
-      <AuthContent />
-    </Suspense>
   );
 }

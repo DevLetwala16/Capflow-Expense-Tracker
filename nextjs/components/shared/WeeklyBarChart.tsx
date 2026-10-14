@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { format, parseISO, subDays } from "date-fns";
 import { useState } from "react";
@@ -43,6 +43,7 @@ export function WeeklyBarChart({ data, currency }: WeeklyBarChartProps) {
             >
               <div className="w-full flex items-end justify-center h-16">
                 <div
+                  suppressHydrationWarning
                   className={`w-full rounded-t-lg transition-all ${
                     isToday
                       ? "bg-[#6366F1]"
@@ -57,6 +58,7 @@ export function WeeklyBarChart({ data, currency }: WeeklyBarChartProps) {
                 />
               </div>
               <span
+                suppressHydrationWarning
                 className={`text-[9px] font-medium ${
                   isToday ? "text-[#6366F1]" : "text-[var(--text-secondary)]"
                 }`}

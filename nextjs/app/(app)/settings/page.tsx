@@ -174,9 +174,14 @@ export default function SettingsPage() {
   const [showMonthlyConfirm, setShowMonthlyConfirm] = useState(false);
   const [convertingAll, setConvertingAll] = useState(false);
   const [convertSuccess, setConvertSuccess] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { lastUpdated } = useExchangeRateStore();
-  const timeAgoMinutes = lastUpdated > 0 ? Math.floor((Date.now() - lastUpdated) / (60 * 1000)) : null;
+  const timeAgoMinutes = mounted && lastUpdated > 0 ? Math.floor((Date.now() - lastUpdated) / (60 * 1000)) : null;
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -197,7 +202,7 @@ export default function SettingsPage() {
     }
   };
 
-  const initials = user?.name
+  const initials = mounted && user?.name
     ? user.name
         .split(" ")
         .map((w) => w[0])
@@ -237,15 +242,15 @@ export default function SettingsPage() {
                 <span className="text-white font-bold text-xl">{initials}</span>
               </div>
               <div>
-                <p className="font-semibold text-[var(--text-primary)]">
-                  {user?.name || "Guest User"}
+                <p suppressHydrationWarning className="font-semibold text-[var(--text-primary)]">
+                  {mounted && user?.name ? user.name : "Guest User"}
                 </p>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  {user?.email || "Not signed in"}
+                <p suppressHydrationWarning className="text-xs text-[var(--text-secondary)]">
+                  {mounted && user?.email ? user.email : "Not signed in"}
                 </p>
               </div>
             </div>
-            {user ? (
+            {mounted && user ? (
               <button
                 onClick={() => setShowSignOutDialog(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EF4444]/10 text-[#EF4444] text-xs font-semibold border border-[#EF4444]/20 hover:bg-[#EF4444]/20 transition-colors cursor-pointer"
@@ -294,7 +299,7 @@ export default function SettingsPage() {
           <div className="px-4 py-2 bg-[var(--bg-card-hover)]/30 border-t border-[var(--border-color)] flex items-center justify-between text-[11px] text-[var(--text-secondary)]">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Real rates • Refreshed every 3h {timeAgoMinutes !== null ? `(${timeAgoMinutes}m ago)` : ""}</span>
+              <span suppressHydrationWarning>Real rates • Refreshed every 3h {mounted && timeAgoMinutes !== null ? `(${timeAgoMinutes}m ago)` : ""}</span>
             </span>
             <button
               type="button"

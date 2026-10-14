@@ -495,16 +495,13 @@ export default function OTPAuthPage() {
 
           {/* Bottom Footer: Terms of Use and Privacy Policy */}
           <div className="w-full text-center mt-8 md:mt-8 pt-4 pb-2 text-xs text-zinc-500 leading-relaxed">
-            By continuing you agree to the{" "}
-            <button
+            By continuing you agree to the <button
               type="button"
               onClick={() => setPolicyModal("terms")}
               className="text-[#EF4444] hover:text-[#DC2626] font-medium transition-colors cursor-pointer inline"
             >
               Terms of Use
-            </button>{" "}
-            and{" "}
-            <button
+            </button> and <button
               type="button"
               onClick={() => setPolicyModal("privacy")}
               className="text-[#EF4444] hover:text-[#DC2626] font-medium transition-colors cursor-pointer inline"

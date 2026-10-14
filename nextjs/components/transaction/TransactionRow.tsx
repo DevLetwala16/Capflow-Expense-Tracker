@@ -114,12 +114,12 @@ export const TransactionRow = memo(function TransactionRow({ transaction, catego
 
         {/* Amount */}
         <div className="text-right flex-shrink-0">
-          <p className={`text-sm font-bold ${transaction.type === "income" ? "text-[#10B981]" : "text-[#EF4444]"}`}>
+          <p suppressHydrationWarning className={`text-sm font-bold ${transaction.type === "income" ? "text-[#10B981]" : "text-[#EF4444]"}`}>
             {transaction.type === "income" ? "+" : "-"}{symbol}
             {displayAmount.toLocaleString()}
           </p>
           {isDiffCurrency && (
-            <p className="text-[10px] text-[var(--text-secondary)] font-medium">
+            <p suppressHydrationWarning className="text-[10px] text-[var(--text-secondary)] font-medium">
               ({origSymbol}{transaction.amount.toLocaleString()} {txCurrency})
             </p>
           )}

@@ -63,7 +63,7 @@ export function BalanceCard({
             </div>
             <span className="text-[10px] text-white/80 font-medium tracking-wide">Income</span>
           </div>
-          <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
+          <p suppressHydrationWarning className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
             {formatAmount(safeIncome, currency)}
           </p>
           <p className="text-[9px] text-white/50 mt-0.5">This month</p>
@@ -77,7 +77,7 @@ export function BalanceCard({
             </div>
             <span className="text-[10px] text-white/80 font-medium tracking-wide">Expense</span>
           </div>
-          <p className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
+          <p suppressHydrationWarning className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
             {formatAmount(safeExpense, currency)}
           </p>
           <p className="text-[9px] text-white/50 mt-0.5">This month</p>
@@ -92,6 +92,7 @@ export function BalanceCard({
             <span className="text-[10px] text-white/80 font-medium tracking-wide">Balance</span>
           </div>
           <p
+            suppressHydrationWarning
             className={`text-base font-bold transition-opacity ${
               isNegative ? "text-rose-200" : "text-white"
             } ${loading ? "opacity-60" : "opacity-100"}`}
@@ -106,7 +107,7 @@ export function BalanceCard({
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-1.5">
           <span className="text-[10px] text-white/80 font-medium">Spent of Month&apos;s Income</span>
-          <span className="text-[10px] text-white font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
+          <span suppressHydrationWarning className="text-[10px] text-white font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
             {Math.round(safeSpent)}%
           </span>
         </div>

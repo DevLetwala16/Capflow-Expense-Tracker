@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -37,6 +38,11 @@ const SETTINGS_ITEMS = [
 export function DesktopSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -142,25 +148,25 @@ export function DesktopSidebar() {
           <ThemeToggle className="w-full" />
         </div>
 
-        <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)]">
+        <div suppressHydrationWarning className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)]">
           <Link href="/settings" className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-85 transition-opacity">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {user?.name?.charAt(0)?.toUpperCase() || "G"}
+            <div suppressHydrationWarning className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {mounted && user?.name ? user.name.charAt(0).toUpperCase() : "G"}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                {user?.name || "Guest User"}
+              <p suppressHydrationWarning className="text-xs font-semibold text-[var(--text-primary)] truncate">
+                {mounted && user?.name ? user.name : "Guest User"}
               </p>
-              <p className="text-[10px] text-[var(--text-secondary)] truncate">
-                {user?.email || "Local Account"}
+              <p suppressHydrationWarning className="text-[10px] text-[var(--text-secondary)] truncate">
+                {mounted && user?.email ? user.email : "Local Account"}
               </p>
             </div>
           </Link>
 
-          {user ? (
+          {mounted && user ? (
             <button
               onClick={handleSignOut}
-              className="w-7 h-7 rounded-lg hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[#EF4444] flex items-center justify-center transition-colors"
+              className="w-7 h-7 rounded-lg hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[#EF4444] flex items-center justify-center transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut size={14} />

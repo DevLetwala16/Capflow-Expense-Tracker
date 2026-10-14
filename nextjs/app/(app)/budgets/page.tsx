@@ -119,7 +119,7 @@ export default function BudgetsPage() {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-4 py-3">
         <h1 className="text-lg font-bold text-[var(--text-primary)]">Budgets & Goals</h1>
-        <p className="text-xs text-[var(--text-secondary)]">{format(parseISO(`${selectedMonth}-01`), "MMMM yyyy")}</p>
+        <p suppressHydrationWarning className="text-xs text-[var(--text-secondary)]">{format(parseISO(`${selectedMonth}-01`), "MMMM yyyy")}</p>
       </header>
 
       {/* Main Container: 1 col on mobile, 2 col on laptop/PC */}
@@ -318,7 +318,7 @@ export default function BudgetsPage() {
                           </div>
 
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-[var(--text-secondary)]">
+                            <span suppressHydrationWarning className="text-xs text-[var(--text-secondary)]">
                               Target: {symbol}{goal.targetAmount.toLocaleString()} ·{" "}
                               {daysLeft > 0 ? `${daysLeft}d left` : "Past due"}
                             </span>

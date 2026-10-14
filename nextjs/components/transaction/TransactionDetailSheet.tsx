@@ -47,10 +47,9 @@ export function TransactionDetailSheet({
 }: TransactionDetailSheetProps) {
   const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const rates = useExchangeRateStore((s) => s.rates);
 
   if (!transaction) return null;
-
-  const rates = useExchangeRateStore((s) => s.rates);
   const symbol = CURRENCY_SYMBOLS[currency] || currency;
   const category = categories.find((c) => c.id === transaction.categoryId);
   const isIncome = transaction.type === "income";

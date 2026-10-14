@@ -127,7 +127,7 @@ export default function DashboardPage() {
           >
             <ChevronLeft size={16} className="text-[var(--text-secondary)]" />
           </button>
-          <span className="text-sm font-semibold text-[var(--text-primary)] min-w-[130px] text-center">
+          <span suppressHydrationWarning className="text-sm font-semibold text-[var(--text-primary)] min-w-[130px] text-center">
             {format(currentDate, "MMMM yyyy")}
           </span>
           <button
