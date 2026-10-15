@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, BarChart2, CalendarDays, Target, CreditCard, Settings, ReceiptText } from "lucide-react";
@@ -12,7 +13,19 @@ import { rehydrateWalkthrough } from "@/lib/store/walkthroughStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { DesktopSidebar } from "@/components/shared/DesktopSidebar";
 import { PWAInstallBanner } from "@/components/shared/PWAInstallBanner";
-import { RouteLoadingBar } from "@/components/shared/RouteLoadingBar";
+import { useRecurringEngine } from "@/hooks/useRecurringEngine";
+
+// These components read browser-only APIs (localStorage / window) during render.
+// Rendering them with ssr:false ensures the server HTML never includes them,
+// preventing the Suspense-boundary hydration mismatch.
+const RouteLoadingBar = dynamic(
+  () => import("@/components/shared/RouteLoadingBar").then((m) => ({ default: m.RouteLoadingBar })),
+  { ssr: false }
+);
+const WalkthroughProvider = dynamic(
+  () => import("@/components/walkthrough/WalkthroughProvider").then((m) => ({ default: m.WalkthroughProvider })),
+  { ssr: false }
+);
 
 import { useEMIStore } from "@/lib/store/emiStore";
 import { useExchangeRateStore } from "@/lib/currency/exchangeRates";
@@ -36,6 +49,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, setUser } = useAuthStore();
 
   const { loadEMIs } = useEMIStore();
+
+  // Run the recurring-transaction engine once per calendar day on app load.
+  // This auto-generates child transactions for any recurring parent that is due.
+  useRecurringEngine(user?.id);
 
   // Track the last user we bootstrapped stores for, so we don't re-run on
   // every render — only when the user actually changes.
@@ -93,6 +110,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell flex flex-col md:flex-row min-h-screen bg-[var(--bg-primary)]">
+      {/* ── Walkthrough overlay (renderless — manages its own portal/modal) ── */}
+      <WalkthroughProvider />
+
       {/* ── Instant Route Loading Bar ── */}
       <RouteLoadingBar />
 

@@ -54,6 +54,14 @@ export default function DashboardPage() {
   const weekly = weeklyTotals();
   const spentPercent = income > 0 ? Math.min(Math.round((expense / income) * 100), 100) : 0;
 
+  // Compute previous month's expense for the %Δ pill on BalanceCard
+  const prevMonthExpense = useMemo(() => {
+    const prevMonth = format(subMonths(currentDate, 1), "yyyy-MM");
+    return transactions
+      .filter((tx) => tx.type === "expense" && tx.date.startsWith(prevMonth))
+      .reduce((sum, tx) => sum + tx.amount, 0);
+  }, [transactions, currentDate]);
+
 
   const navigateMonth = (dir: "prev" | "next") => {
     const newDate = dir === "prev" ? subMonths(currentDate, 1) : addMonths(currentDate, 1);
@@ -155,6 +163,7 @@ export default function DashboardPage() {
                 spentPercent={spentPercent}
                 currency={defaultCurrency}
                 loading={loading}
+                prevMonthExpense={prevMonthExpense}
               />
             </div>
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, memo } from "react";
-import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
-import { Edit3, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect, memo } from "react";
+import { motion, useMotionValue, useTransform } from "framer-motion";
+import { Edit3, Trash2, Undo2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Transaction, Category } from "@/lib/db";
 import { DynamicIcon } from "@/components/shared/DynamicIcon";
 import { CURRENCY_SYMBOLS, convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
+
+const UNDO_DURATION_MS = 5000;
 
 interface TransactionRowProps {
   transaction: Transaction;
@@ -16,8 +18,16 @@ interface TransactionRowProps {
   onDelete: (id: number) => Promise<void>;
 }
 
-export const TransactionRow = memo(function TransactionRow({ transaction, categories, currency, onEdit, onDelete }: TransactionRowProps) {
-  const [deleting, setDeleting] = useState(false);
+export const TransactionRow = memo(function TransactionRow({
+  transaction,
+  categories,
+  currency,
+  onEdit,
+  onDelete,
+}: TransactionRowProps) {
+  // null = idle | "pending" = soft-deleted awaiting undo | "done" = fully deleted
+  const [deleteState, setDeleteState] = useState<"idle" | "pending" | "done">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const x = useMotionValue(0);
   const bgOpacity = useTransform(x, [-80, 0], [1, 0]);
   const rates = useExchangeRateStore((s) => s.rates);
@@ -32,20 +42,83 @@ export const TransactionRow = memo(function TransactionRow({ transaction, catego
 
   const category = categories.find((c) => c.id === transaction.categoryId);
 
-  const handleDelete = async () => {
-    setDeleting(true);
-    await onDelete(transaction.id!);
+  // Clear timer on unmount to avoid calling setState on dead component
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleDelete = () => {
+    // Optimistically hide the row and show undo toast for 5 seconds
+    setDeleteState("pending");
+    x.set(0); // snap swipe back
+
+    timerRef.current = setTimeout(async () => {
+      setDeleteState("done");
+      await onDelete(transaction.id!);
+    }, UNDO_DURATION_MS);
   };
 
-  if (deleting) return null;
+  const handleUndo = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setDeleteState("idle");
+  };
 
   const paymentLabels: Record<string, string> = {
-    cash: "Cash", credit_card: "Card", bank_transfer: "Bank", upi: "UPI",
+    cash: "Cash",
+    credit_card: "Card",
+    bank_transfer: "Bank",
+    upi: "UPI",
   };
 
+  // Fully deleted — unmount the row
+  if (deleteState === "done") return null;
+
+  // Soft-deleted — row is hidden but undo toast is visible
+  if (deleteState === "pending") {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30"
+        role="alert"
+        aria-live="polite"
+      >
+        {/* Progress bar */}
+        <div className="absolute bottom-0 left-0 h-0.5 bg-[#EF4444]/40 rounded-b-xl" style={{ width: "100%" }}>
+          <motion.div
+            className="h-full bg-[#EF4444] rounded-b-xl origin-left"
+            initial={{ scaleX: 1 }}
+            animate={{ scaleX: 0 }}
+            transition={{ duration: UNDO_DURATION_MS / 1000, ease: "linear" }}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 min-w-0">
+          <Trash2 size={15} className="text-[#EF4444] flex-shrink-0" />
+          <p className="text-sm text-[var(--text-primary)] truncate">
+            <span className="font-semibold">{transaction.title}</span>
+            <span className="text-[var(--text-secondary)]"> deleted</span>
+          </p>
+        </div>
+
+        <button
+          onClick={handleUndo}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#6366F1] bg-[#6366F1]/10 hover:bg-[#6366F1]/20 rounded-lg transition-colors flex-shrink-0"
+          aria-label="Undo delete"
+        >
+          <Undo2 size={13} />
+          Undo
+        </button>
+      </motion.div>
+    );
+  }
+
+  // Normal state
   return (
     <div className="relative overflow-hidden rounded-xl">
-      {/* Action buttons */}
+      {/* Action buttons revealed on swipe */}
       <motion.div
         className="absolute right-0 top-0 bottom-0 flex items-center gap-1 px-2"
         style={{ opacity: bgOpacity }}
@@ -114,13 +187,18 @@ export const TransactionRow = memo(function TransactionRow({ transaction, catego
 
         {/* Amount */}
         <div className="text-right flex-shrink-0">
-          <p suppressHydrationWarning className={`text-sm font-bold ${transaction.type === "income" ? "text-[#10B981]" : "text-[#EF4444]"}`}>
-            {transaction.type === "income" ? "+" : "-"}{symbol}
+          <p
+            suppressHydrationWarning
+            className={`text-sm font-bold ${transaction.type === "income" ? "text-[#10B981]" : "text-[#EF4444]"}`}
+          >
+            {transaction.type === "income" ? "+" : "-"}
+            {symbol}
             {displayAmount.toLocaleString()}
           </p>
           {isDiffCurrency && (
             <p suppressHydrationWarning className="text-[10px] text-[var(--text-secondary)] font-medium">
-              ({origSymbol}{transaction.amount.toLocaleString()} {txCurrency})
+              ({origSymbol}
+              {transaction.amount.toLocaleString()} {txCurrency})
             </p>
           )}
         </div>

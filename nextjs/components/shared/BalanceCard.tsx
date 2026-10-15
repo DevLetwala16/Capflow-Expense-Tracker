@@ -27,6 +27,8 @@ interface BalanceCardProps {
   spentPercent?: number;
   currency?: string;
   loading?: boolean;
+  /** Previous month's total expense — used to compute %Δ pill on the Expense stat */
+  prevMonthExpense?: number;
 }
 
 export function BalanceCard({
@@ -36,6 +38,7 @@ export function BalanceCard({
   spentPercent = 0,
   currency = "INR",
   loading = false,
+  prevMonthExpense,
 }: BalanceCardProps) {
   const safeSpent = Math.max(0, Math.min(100, Number.isFinite(spentPercent) ? spentPercent : 0));
   const safeIncome = Number.isFinite(income) ? income : 0;
@@ -43,6 +46,15 @@ export function BalanceCard({
   const safeCumulative = Number.isFinite(cumulativeBalance) ? cumulativeBalance : 0;
 
   const isNegative = safeCumulative < 0;
+
+  // %Δ vs last month expense
+  const hasExpenseDelta =
+    prevMonthExpense !== undefined &&
+    Number.isFinite(prevMonthExpense) &&
+    prevMonthExpense > 0;
+  const expenseDeltaPct = hasExpenseDelta
+    ? Math.round(((safeExpense - prevMonthExpense!) / prevMonthExpense!) * 100)
+    : null;
 
   return (
     <div
@@ -80,7 +92,21 @@ export function BalanceCard({
           <p suppressHydrationWarning className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
             {formatAmount(safeExpense, currency)}
           </p>
-          <p className="text-[9px] text-white/50 mt-0.5">This month</p>
+          {/* %Δ vs last month pill */}
+          {expenseDeltaPct !== null ? (
+            <span
+              suppressHydrationWarning
+              className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-1 ${
+                expenseDeltaPct <= 0
+                  ? "bg-emerald-400/30 text-emerald-200"
+                  : "bg-rose-400/30 text-rose-200"
+              }`}
+            >
+              {expenseDeltaPct > 0 ? "▲" : "▼"} {Math.abs(expenseDeltaPct)}%
+            </span>
+          ) : (
+            <p suppressHydrationWarning className="text-[9px] text-white/50 mt-0.5">This month</p>
+          )}
         </div>
 
         {/* Balance — cumulative all-time */}
