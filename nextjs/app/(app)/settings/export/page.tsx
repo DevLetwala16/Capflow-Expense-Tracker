@@ -66,6 +66,63 @@ function buildCsv(headers: string[], rows: unknown[][]): string {
   return lines.join("\r\n");
 }
 
+function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case "&": return "&amp;";
+      case "'": return "&apos;";
+      case '"': return "&quot;";
+      default: return c;
+    }
+  });
+}
+
+function buildExcelXml(headers: string[], rows: (string | number)[][]): string {
+  const xmlHeaders = headers
+    .map(
+      (h) =>
+        `<Cell ss:StyleID="header"><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`
+    )
+    .join("");
+
+  const xmlRows = rows
+    .map((row) => {
+      const cells = row
+        .map((cell) => {
+          const isNum = typeof cell === "number";
+          const type = isNum ? "Number" : "String";
+          const val = escapeXml(String(cell));
+          return `<Cell><Data ss:Type="${type}">${val}</Data></Cell>`;
+        })
+        .join("");
+      return `<Row>${cells}</Row>`;
+    })
+    .join("\r\n");
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="header">
+   <Font ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#10B981" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Transactions">
+  <Table>
+   <Row>${xmlHeaders}</Row>
+   ${xmlRows}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+}
+
 // ─── Toast (lightweight inline) ──────────────────────────────────────────────
 
 type ToastState = { message: string; type: "success" | "error" } | null;
@@ -232,6 +289,35 @@ export default function ExportPage() {
       showToast("Failed to export CSV", "error");
     } finally {
       setLoading("csv", false);
+    }
+  };
+
+  // ── Excel (.xlsx) Export ───────────────────────────────────────────────────
+
+  const exportExcel = async () => {
+    const userId = user?.id ?? "guest";
+    setLoading("excel", true);
+    try {
+      const transactions = await db.transactions.where("userId").equals(userId).toArray();
+      const headers = ["Date", "Type", "Category", "Amount", "Currency", "PaymentMethod", "Notes"];
+      const rows = transactions.map((tx) => [
+        tx.date,
+        tx.type,
+        tx.categoryId,
+        tx.amount,
+        tx.currency,
+        tx.paymentMethod,
+        tx.notes ?? "",
+      ]);
+      const xml = buildExcelXml(headers, rows);
+      const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8;" });
+      triggerDownload(blob, `capflow-transactions-${todayStr()}.xlsx`);
+      showToast("Excel (.xlsx) exported successfully", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to export Excel", "error");
+    } finally {
+      setLoading("excel", false);
     }
   };
 
@@ -464,6 +550,15 @@ export default function ExportPage() {
       useBudgetStore.setState({ budgets: [], goals: [], loading: false, loadedMonth: null, goalsLoaded: false });
       useEMIStore.setState({ emis: [], loading: false, loaded: false });
 
+      // Wipe user local storage settings & cache completely
+      if (typeof window !== "undefined") {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith("capflow-") && k !== "capflow-auth") {
+            localStorage.removeItem(k);
+          }
+        });
+      }
+
       setShowClearDialog(false);
       setClearInput("");
       showToast("All data cleared", "success");
@@ -523,6 +618,14 @@ export default function ExportPage() {
             description="Transactions as a spreadsheet"
             onClick={exportCSV}
             loading={!!loadingState.csv}
+          />
+          <ActionCard
+            icon={<FileSpreadsheet size={18} className="text-[#059669]" />}
+            iconBg="bg-[#059669]/10"
+            title="Export as Excel (.xlsx)"
+            description="Formatted Microsoft Excel workbook"
+            onClick={exportExcel}
+            loading={!!loadingState.excel}
           />
           <ActionCard
             icon={<FileText size={18} className="text-[#F59E0B]" />}

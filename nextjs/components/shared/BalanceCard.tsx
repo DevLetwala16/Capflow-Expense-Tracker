@@ -1,20 +1,35 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Layers } from "lucide-react";
+import { TrendingUp, TrendingDown, Layers, Eye, EyeOff } from "lucide-react";
+import { useSettingsStore, NumberingSystem } from "@/lib/store/settingsStore";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
 };
 
-function formatAmount(amount: number = 0, currency: string = "INR"): string {
+function formatAmount(
+  amount: number = 0,
+  currency: string = "INR",
+  isMasked: boolean = false,
+  numberingSystem: NumberingSystem = "western"
+): string {
+  if (isMasked) return "••••••";
   const symbol = CURRENCY_SYMBOLS[currency] || currency + " ";
   const val = Number.isFinite(amount) ? amount : 0;
   const abs = Math.abs(val);
 
-  if (abs >= 100000) return symbol + (val / 100000).toFixed(1) + "L";
-  if (abs >= 1000) return symbol + (val / 1000).toFixed(1) + "K";
-  return symbol + val.toLocaleString("en-IN");
+  if (numberingSystem === "indian") {
+    if (abs >= 10000000) return symbol + (val / 10000000).toFixed(2) + "Cr";
+    if (abs >= 100000) return symbol + (val / 100000).toFixed(1) + "L";
+    if (abs >= 1000) return symbol + (val / 1000).toFixed(1) + "K";
+    return symbol + val.toLocaleString("en-IN");
+  } else {
+    if (abs >= 1000000) return symbol + (val / 1000000).toFixed(2) + "M";
+    if (abs >= 1000) return symbol + (val / 1000).toFixed(1) + "K";
+    return symbol + val.toLocaleString("en-US");
+  }
 }
 
 interface BalanceCardProps {
@@ -40,6 +55,10 @@ export function BalanceCard({
   loading = false,
   prevMonthExpense,
 }: BalanceCardProps) {
+  const { balanceMasked: globalMasked, numberingSystem } = useSettingsStore();
+  const [localUnmask, setLocalUnmask] = useState(false);
+  const isMasked = globalMasked && !localUnmask;
+
   const safeSpent = Math.max(0, Math.min(100, Number.isFinite(spentPercent) ? spentPercent : 0));
   const safeIncome = Number.isFinite(income) ? income : 0;
   const safeExpense = Number.isFinite(expense) ? expense : 0;
@@ -64,6 +83,18 @@ export function BalanceCard({
       <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10 blur-xl pointer-events-none" />
       <div className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full bg-black/10 blur-lg pointer-events-none" />
 
+      {/* Stealth Eye Toggle (when masked globally or user wants to toggle) */}
+      {globalMasked && (
+        <button
+          type="button"
+          onClick={() => setLocalUnmask((v) => !v)}
+          className="absolute top-3 right-3 p-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white/90 transition-colors z-20 cursor-pointer"
+          title={isMasked ? "Reveal amounts" : "Mask amounts"}
+        >
+          {isMasked ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      )}
+
       {/* 3-Column Stats Row */}
       <div className="grid grid-cols-3 gap-2 mb-4 relative z-10">
 
@@ -76,7 +107,7 @@ export function BalanceCard({
             <span className="text-[10px] text-white/80 font-medium tracking-wide">Income</span>
           </div>
           <p suppressHydrationWarning className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
-            {formatAmount(safeIncome, currency)}
+            {formatAmount(safeIncome, currency, isMasked, numberingSystem)}
           </p>
           <p className="text-[9px] text-white/50 mt-0.5">This month</p>
         </div>
@@ -90,7 +121,7 @@ export function BalanceCard({
             <span className="text-[10px] text-white/80 font-medium tracking-wide">Expense</span>
           </div>
           <p suppressHydrationWarning className={`text-base font-bold text-white transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
-            {formatAmount(safeExpense, currency)}
+            {formatAmount(safeExpense, currency, isMasked, numberingSystem)}
           </p>
           {/* %Δ vs last month pill */}
           {expenseDeltaPct !== null ? (
@@ -123,7 +154,7 @@ export function BalanceCard({
               isNegative ? "text-rose-200" : "text-white"
             } ${loading ? "opacity-60" : "opacity-100"}`}
           >
-            {isNegative ? "-" : ""}{formatAmount(Math.abs(safeCumulative), currency)}
+            {isMasked ? "••••••" : (isNegative ? "-" : "") + formatAmount(Math.abs(safeCumulative), currency, false, numberingSystem)}
           </p>
           <p className="text-[9px] text-white/50 mt-0.5">All time</p>
         </div>

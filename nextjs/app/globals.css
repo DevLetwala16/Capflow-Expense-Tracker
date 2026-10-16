@@ -28,6 +28,9 @@
     --radius-sheet:   24px;
     --bottom-nav-h:   64px;
 
+    --font-scale:     1;
+    --density:        0;
+
     /* shadcn tokens */
     --background:     0 0% 98%;
     --foreground:     222.2 84% 4.9%;
@@ -85,6 +88,9 @@
 
 @layer base {
   * { @apply border-border; }
+  html {
+    font-size: calc(16px * var(--font-scale, 1));
+  }
   body {
     @apply bg-[var(--bg-primary)] text-[var(--text-primary)];
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

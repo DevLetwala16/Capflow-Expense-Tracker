@@ -26,6 +26,10 @@ const WalkthroughProvider = dynamic(
   () => import("@/components/walkthrough/WalkthroughProvider").then((m) => ({ default: m.WalkthroughProvider })),
   { ssr: false }
 );
+const AppLockOverlay = dynamic(
+  () => import("@/components/shared/AppLockOverlay").then((m) => ({ default: m.AppLockOverlay })),
+  { ssr: false }
+);
 
 import { useEMIStore } from "@/lib/store/emiStore";
 import { useExchangeRateStore } from "@/lib/currency/exchangeRates";
@@ -108,8 +112,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     loadBudgets(selectedMonth, user.id);
   }, [selectedMonth, user, loadTransactions, loadBudgets]);
 
+  // Synchronize dynamic appearance tokens (font scale, density, custom/preset accent, background, surface)
+  const { fontScale, density, accentPreset, customAccent, customBackground, customSurface } = useSettingsStore();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const fontMap: Record<string, string> = {
+      small: "0.85",
+      medium: "0.92",
+      default: "1",
+      large: "1.1",
+      xlarge: "1.25",
+    };
+    if (fontScale && fontMap[fontScale]) {
+      document.documentElement.style.setProperty("--font-scale", fontMap[fontScale]);
+    }
+    if (density) {
+      document.documentElement.style.setProperty("--density", density === "compact" ? "1" : "0");
+    }
+    const presetMap: Record<string, string> = {
+      indigo: "#6366F1",
+      emerald: "#10B981",
+      purple: "#9333EA",
+      orange: "#F97316",
+      blue: "#3B82F6",
+    };
+    const accent = customAccent || (accentPreset && presetMap[accentPreset]) || "#6366F1";
+    document.documentElement.style.setProperty("--accent", accent);
+
+    if (customBackground && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(customBackground)) {
+      document.documentElement.style.setProperty("--bg-primary", customBackground);
+    } else {
+      document.documentElement.style.removeProperty("--bg-primary");
+    }
+
+    if (customSurface && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(customSurface)) {
+      document.documentElement.style.setProperty("--bg-card", customSurface);
+    } else {
+      document.documentElement.style.removeProperty("--bg-card");
+    }
+  }, [fontScale, density, accentPreset, customAccent, customBackground, customSurface]);
+
   return (
     <div className="app-shell flex flex-col md:flex-row min-h-screen bg-[var(--bg-primary)]">
+      {/* ── App Lock & Security Overlay ── */}
+      <AppLockOverlay />
+
       {/* ── Walkthrough overlay (renderless — manages its own portal/modal) ── */}
       <WalkthroughProvider />
 

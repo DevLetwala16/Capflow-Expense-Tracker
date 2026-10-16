@@ -13,6 +13,24 @@ import { DynamicIcon } from "./DynamicIcon";
 import { ReceiptUpload } from "./ReceiptUpload";
 import { CurrencySelectorModal } from "@/components/shared/CurrencySelectorModal";
 import { CURRENCY_SYMBOLS, convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
+import { useSettingsStore } from "@/lib/store/settingsStore";
+
+function mapPaymentMethod(pm?: string): "cash" | "credit_card" | "bank_transfer" | "upi" {
+  if (!pm) return "cash";
+  const lower = pm.toLowerCase();
+  if (lower.includes("upi")) return "upi";
+  if (lower.includes("credit")) return "credit_card";
+  if (
+    lower.includes("bank") ||
+    lower.includes("debit") ||
+    lower.includes("hdfc") ||
+    lower.includes("sbi") ||
+    lower.includes("icici")
+  ) {
+    return "bank_transfer";
+  }
+  return "cash";
+}
 
 const transactionSchema = z.object({
   type: z.enum(["expense", "income"]),
@@ -64,6 +82,7 @@ export function AddTransactionSheet({
 
   const { addTransaction, updateTransaction, deleteTransaction } = useTransactionStore();
   const { user } = useAuthStore();
+  const { defaultPaymentMethod, autoCategorizeRules } = useSettingsStore();
   const today = (() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -85,7 +104,7 @@ export function AddTransactionSheet({
       type: defaultType,
       amount: 0,
       date: today,
-      paymentMethod: "cash",
+      paymentMethod: mapPaymentMethod(defaultPaymentMethod),
       currency: currency || "INR",
     },
   });
@@ -118,14 +137,14 @@ export function AddTransactionSheet({
           type: defaultType,
           amount: 0,
           date: prefillDate ?? today,
-          paymentMethod: "cash",
+          paymentMethod: mapPaymentMethod(defaultPaymentMethod),
           currency: initCurr,
         });
         setAmountStr("");
         setReceiptImage(undefined);
       }
     }
-  }, [open, defaultType, currency, prefillDate, editTransaction, reset, setValue, today]);
+  }, [open, defaultType, currency, prefillDate, editTransaction, reset, setValue, today, defaultPaymentMethod]);
 
   const handleCurrencySelect = (newCode: string) => {
     if (newCode.toUpperCase() === selectedCurrency.toUpperCase()) {
@@ -434,6 +453,23 @@ export function AddTransactionSheet({
                     type="text"
                     placeholder="What was this for? (e.g. Lunch, Groceries)"
                     {...register("title")}
+                    onChange={(e) => {
+                      register("title").onChange(e);
+                      const text = e.target.value.toLowerCase();
+                      if (autoCategorizeRules && autoCategorizeRules.length > 0 && text) {
+                        const matched = autoCategorizeRules.find(
+                          (r) => r.keyword && text.includes(r.keyword.toLowerCase())
+                        );
+                        if (matched) {
+                          const target = categories.find(
+                            (c) => c.name.toLowerCase() === matched.category.toLowerCase()
+                          );
+                          if (target?.id) {
+                            setValue("categoryId", target.id, { shouldValidate: true });
+                          }
+                        }
+                      }
+                    }}
                     className="w-full text-sm text-center bg-transparent text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] font-medium"
                   />
                   {errors.title && (
