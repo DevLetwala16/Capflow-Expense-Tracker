@@ -21,14 +21,22 @@ function ensureAllDirs() {
   const rootDir = path.resolve(__dirname, '..');
   const baseDirs = [
     path.join(rootDir, '.next', 'static', 'chunks'),
+    path.join(rootDir, '.next', 'static', 'chunks', 'app'),
+    path.join(rootDir, '.next', 'static', 'chunks', 'pages'),
     path.join(rootDir, '.next', 'static', 'css'),
     path.join(rootDir, '.next', 'static', 'media'),
     path.join(rootDir, '.next', 'types', 'app'),
-    path.join(rootDir, '.next', 'types', 'pages'),
     path.join(rootDir, '.next', 'server', 'app'),
-    path.join(rootDir, '.next', 'server', 'pages'),
     path.join(rootDir, '.next', 'cache'),
   ];
+
+  if (fs.existsSync(path.join(rootDir, 'pages'))) {
+    baseDirs.push(
+      path.join(rootDir, '.next', 'types', 'pages'),
+      path.join(rootDir, '.next', 'server', 'pages'),
+      path.join(rootDir, '.next', 'static', 'chunks', 'pages')
+    );
+  }
 
   for (const b of baseDirs) {
     try {
@@ -43,11 +51,13 @@ function ensureAllDirs() {
       try {
         fs.mkdirSync(path.join(rootDir, '.next', 'server', 'app', d), { recursive: true });
         fs.mkdirSync(path.join(rootDir, '.next', 'types', 'app', d), { recursive: true });
+        fs.mkdirSync(path.join(rootDir, '.next', 'static', 'chunks', 'app', d), { recursive: true });
 
         const clean = d.replace(/\([^)]+\)[\\/]?/g, '');
         if (clean) {
           fs.mkdirSync(path.join(rootDir, '.next', 'server', 'app', clean), { recursive: true });
           fs.mkdirSync(path.join(rootDir, '.next', 'types', 'app', clean), { recursive: true });
+          fs.mkdirSync(path.join(rootDir, '.next', 'static', 'chunks', 'app', clean), { recursive: true });
         }
       } catch (_) {}
     }

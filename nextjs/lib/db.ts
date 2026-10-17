@@ -1,4 +1,5 @@
 import Dexie, { Table } from 'dexie';
+import { SplitSession } from '@/types/splitter';
 
 export interface User {
   id?: number;
@@ -91,6 +92,16 @@ export interface EMI {
   updatedAt: string;
 }
 
+export interface SplitOfflineQueueItem {
+  id?: number;
+  sessionId: string;
+  action: 'ADD_EXPENSE' | 'EDIT_EXPENSE' | 'DELETE_EXPENSE' | 'SETTLE' | 'UPDATE_SESSION';
+  payload: any;
+  timestamp: string;
+  status: 'pending' | 'syncing' | 'failed';
+  retryCount: number;
+}
+
 export class ExpenseTrackerDB extends Dexie {
   users!: Table<User>;
   categories!: Table<Category>;
@@ -98,6 +109,8 @@ export class ExpenseTrackerDB extends Dexie {
   budgets!: Table<Budget>;
   goals!: Table<Goal>;
   emis!: Table<EMI>;
+  splitSessions!: Table<SplitSession>;
+  splitOfflineQueue!: Table<SplitOfflineQueueItem>;
 
   constructor() {
     super('ExpenseTrackerDB');
@@ -118,6 +131,17 @@ export class ExpenseTrackerDB extends Dexie {
       budgets:      '++id, userId, [userId+categoryId+month], [userId+month]',
       goals:        '++id, userId, [userId+targetDate]',
       emis:         '++id, userId, [userId+dueDay]',
+    });
+    // Version 3 — Splitter module local-first session store and offline mutation queue
+    this.version(3).stores({
+      users:        '++id, email',
+      categories:   '++id, userId, [userId+order], [userId+type]',
+      transactions: '++id, userId, [userId+date], [userId+categoryId], [userId+type], [userId+paymentMethod]',
+      budgets:      '++id, userId, [userId+categoryId+month], [userId+month]',
+      goals:        '++id, userId, [userId+targetDate]',
+      emis:         '++id, userId, [userId+dueDay]',
+      splitSessions: '++id, sessionId, userId, status, updatedAt',
+      splitOfflineQueue: '++id, sessionId, status, timestamp',
     });
   }
 }

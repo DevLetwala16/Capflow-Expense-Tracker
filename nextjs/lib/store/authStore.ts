@@ -69,6 +69,15 @@ export const useAuthStore = create<AuthState>()(
             loaded: false,
           });
         });
+        import('./splitterStore').then(({ useSplitterStore }) => {
+          useSplitterStore.setState({
+            sessions: [],
+            activeSession: null,
+            loading: false,
+            syncing: false,
+            liveToasts: [],
+          });
+        });
       },
     }),
     {

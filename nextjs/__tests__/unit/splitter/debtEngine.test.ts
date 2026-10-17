@@ -1,0 +1,177 @@
+import {
+  calculateEqualSplits,
+  calculateMemberNetPositions,
+  simplifyDebts,
+  roundTo2Decimals,
+  toCents,
+  fromCents,
+} from '@/lib/splitter/debtEngine';
+import { SplitSession } from '@/types/splitter';
+
+describe('Splitter Debt Engine', () => {
+  test('calculateEqualSplits divides amount accurately with remainder handling', () => {
+    // 100 divided among 3 members: 33.34, 33.33, 33.33 => total 100.00
+    const splits = calculateEqualSplits(100, ['m1', 'm2', 'm3']);
+    expect(splits).toHaveLength(3);
+    const sum = splits.reduce((acc, s) => acc + s.amount, 0);
+    expect(roundTo2Decimals(sum)).toBe(100);
+    expect(splits[0].amount).toBe(33.34);
+    expect(splits[1].amount).toBe(33.33);
+    expect(splits[2].amount).toBe(33.33);
+  });
+
+  test('calculateMemberNetPositions routes dependent liabilities to primary payer', () => {
+    // Papa (m1, primary), Kid (m2, dependent of m1), Friend (m3, independent)
+    const session: SplitSession = {
+      sessionId: 'CAP-SPLIT-TEST-1',
+      userId: 'user_1',
+      name: 'Family & Friend Trip',
+      template: 'family',
+      startDate: '2026-10-01',
+      endDate: '2026-10-05',
+      currency: 'INR',
+      status: 'active',
+      members: [
+        {
+          id: 'm1',
+          name: 'Papa',
+          handle: '@papa',
+          color: '#6366F1',
+          isDependent: false,
+        },
+        {
+          id: 'm2',
+          name: 'Kid',
+          handle: '@kid',
+          color: '#EC4899',
+          isDependent: true,
+          primaryPayerMemberId: 'm1',
+        },
+        {
+          id: 'm3',
+          name: 'Friend',
+          handle: '@friend',
+          color: '#10B981',
+          isDependent: false,
+        },
+      ],
+      expenses: [
+        {
+          id: 'exp1',
+          sessionId: 'CAP-SPLIT-TEST-1',
+          title: 'Amusement Park Tickets',
+          amount: 3000,
+          currency: 'INR',
+          category: 'Entertainment',
+          date: '2026-10-02T10:00:00Z',
+          createdBy: { memberId: 'm3', name: 'Friend' },
+          paidBy: [{ memberId: 'm3', amount: 3000 }], // Friend paid 3000
+          splitMode: 'equal',
+          splits: [
+            { memberId: 'm1', amount: 1000 },
+            { memberId: 'm2', amount: 1000 }, // Kid consumes 1000
+            { memberId: 'm3', amount: 1000 },
+          ],
+          createdAt: '2026-10-02T10:00:00Z',
+          updatedAt: '2026-10-02T10:00:00Z',
+        },
+      ],
+      settlements: [],
+      auditLogs: [],
+      createdAt: '2026-10-01T00:00:00Z',
+      updatedAt: '2026-10-02T10:00:00Z',
+    };
+
+    const positions = calculateMemberNetPositions(session);
+    const papa = positions.find((p) => p.memberId === 'm1')!;
+    const kid = positions.find((p) => p.memberId === 'm2')!;
+    const friend = positions.find((p) => p.memberId === 'm3')!;
+
+    // Friend paid 3000, owes 1000 => Net: +2000 (Gets back 2000)
+    expect(friend.netBalance).toBe(2000);
+    expect(friend.individualSpend).toBe(1000);
+
+    // Kid consumed 1000, but is dependent => Kid's effective net balance is 0!
+    expect(kid.individualSpend).toBe(1000);
+    expect(kid.netBalance).toBe(0);
+
+    // Papa consumed 1000, absorbed 1000 from Kid => Papa owes 2000 => Net: -2000 (Owes 2000)
+    expect(papa.individualSpend).toBe(1000);
+    expect(papa.dependentLiabilitiesAbsorbed).toBe(1000);
+    expect(papa.netBalance).toBe(-2000);
+
+    // Now test min-cash-flow simplification: Papa should pay Friend 2000
+    const debts = simplifyDebts(positions);
+    expect(debts).toHaveLength(1);
+    expect(debts[0].fromMemberId).toBe('m1');
+    expect(debts[0].toMemberId).toBe('m3');
+    expect(debts[0].amount).toBe(2000);
+  });
+
+  test('partial settlement updates net balances accurately', () => {
+    const session: SplitSession = {
+      sessionId: 'CAP-SPLIT-TEST-2',
+      userId: 'user_1',
+      name: 'Flatmates',
+      template: 'group',
+      startDate: '2026-10-01',
+      endDate: '2026-10-05',
+      currency: 'INR',
+      status: 'active',
+      members: [
+        { id: 'm1', name: 'Alice', handle: '@alice', color: '#6366F1', isDependent: false },
+        { id: 'm2', name: 'Bob', handle: '@bob', color: '#10B981', isDependent: false },
+      ],
+      expenses: [
+        {
+          id: 'exp1',
+          sessionId: 'CAP-SPLIT-TEST-2',
+          title: 'Groceries',
+          amount: 2000,
+          currency: 'INR',
+          category: 'Food',
+          date: '2026-10-01T12:00:00Z',
+          createdBy: { memberId: 'm1', name: 'Alice' },
+          paidBy: [{ memberId: 'm1', amount: 2000 }],
+          splitMode: 'equal',
+          splits: [
+            { memberId: 'm1', amount: 1000 },
+            { memberId: 'm2', amount: 1000 },
+          ],
+          createdAt: '2026-10-01T12:00:00Z',
+          updatedAt: '2026-10-01T12:00:00Z',
+        },
+      ],
+      settlements: [
+        {
+          id: 'st1',
+          sessionId: 'CAP-SPLIT-TEST-2',
+          fromMemberId: 'm2', // Bob pays Alice 600
+          toMemberId: 'm1',
+          amount: 600,
+          date: '2026-10-02T15:00:00Z',
+          recordedBy: { memberId: 'm2', name: 'Bob' },
+          createdAt: '2026-10-02T15:00:00Z',
+        },
+      ],
+      auditLogs: [],
+      createdAt: '2026-10-01T00:00:00Z',
+      updatedAt: '2026-10-02T15:00:00Z',
+    };
+
+    const positions = calculateMemberNetPositions(session);
+    const alice = positions.find((p) => p.memberId === 'm1')!;
+    const bob = positions.find((p) => p.memberId === 'm2')!;
+
+    // Bob originally owed 1000, paid 600 => now owes 400
+    expect(bob.netBalance).toBe(-400);
+    // Alice was owed 1000, received 600 => now gets back 400
+    expect(alice.netBalance).toBe(400);
+
+    const simplified = simplifyDebts(positions);
+    expect(simplified).toHaveLength(1);
+    expect(simplified[0].fromMemberName).toBe('Bob');
+    expect(simplified[0].toMemberName).toBe('Alice');
+    expect(simplified[0].amount).toBe(400);
+  });
+});

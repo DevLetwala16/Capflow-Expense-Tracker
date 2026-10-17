@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/shared/ThemeProvider";
 import { SkipToContent } from "@/components/shared/SkipToContent";
+import { ChunkErrorHandler } from "@/components/shared/ChunkErrorHandler";
 
 export const metadata: Metadata = {
   title: "CapFlow — Expense Tracker",
@@ -47,6 +48,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         {/* ── Accessibility: skip navigation for keyboard users (Step 4.5) ── */}
         <SkipToContent />
+        <ChunkErrorHandler />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

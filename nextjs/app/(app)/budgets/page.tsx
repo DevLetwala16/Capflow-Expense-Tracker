@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, Target, TrendingUp } from "lucide-react";
 import { useBudgetStore } from "@/lib/store/budgetStore";
@@ -13,6 +13,9 @@ import { BudgetDrilldownSheet } from "@/components/budgets/BudgetDrilldownSheet"
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AnimatedProgressRing } from "@/components/shared/AnimatedProgressRing";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
+import { SplitterCard } from "@/components/splitter/SplitterCard";
+import { useSplitterStore } from "@/lib/store/splitterStore";
+import { useAuthStore } from "@/lib/store/authStore";
 import { format, parseISO } from "date-fns";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -112,6 +115,14 @@ export default function BudgetsPage() {
     return { ...b, spent };
   });
 
+  const { user } = useAuthStore();
+  const { sessions, loadSessions } = useSplitterStore();
+
+  useEffect(() => {
+    if (user?.id) loadSessions(user.id);
+    else loadSessions("guest_user");
+  }, [user, loadSessions]);
+
   const addFundsGoal = goals.find((g) => g.id === addFundsGoalId);
 
   return (
@@ -130,7 +141,10 @@ export default function BudgetsPage() {
           variant="module"
         />
       ) : (
-        <div className="px-4 pb-8 pt-4 md:py-6 space-y-6 md:space-y-0">
+        <div className="px-4 pb-8 pt-4 md:py-6 space-y-6">
+          {/* ── Splitter / Group Expenses Card (Specification 1: Entry Point) ── */}
+          <SplitterCard sessions={sessions} currencySymbol={symbol} />
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {/* ── Budgets Section (Exact same cards, buttons, and fonts) ── */}
             <section>

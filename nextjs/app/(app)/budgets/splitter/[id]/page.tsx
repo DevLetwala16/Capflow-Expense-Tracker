@@ -1,0 +1,1072 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ArrowLeft,
+  QrCode,
+  Copy,
+  Check,
+  Plus,
+  Share2,
+  Download,
+  Mail,
+  Users2,
+  Calendar,
+  Receipt,
+  HandCoins,
+  History,
+  FileText,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  ChevronRight,
+  TrendingUp,
+  AlertTriangle,
+  Lock,
+  Unlock,
+  Sparkles,
+  X,
+  UserPlus,
+} from "lucide-react";
+import { useSplitterStore } from "@/lib/store/splitterStore";
+import { useAuthStore } from "@/lib/store/authStore";
+import {
+  calculateMemberNetPositions,
+  simplifyDebts,
+  formatSplitCurrency,
+} from "@/lib/splitter/debtEngine";
+import {
+  generateSplitterReportPDF,
+  downloadSplitterPDF,
+  generateWhatsAppSummary,
+} from "@/lib/splitter/splitterPdf";
+import { QRCodeModal } from "@/components/splitter/QRCodeModal";
+import { AddSplitExpenseModal } from "@/components/splitter/AddSplitExpenseModal";
+import { RecordSettlementModal } from "@/components/splitter/RecordSettlementModal";
+import { AddMemberModal } from "@/components/splitter/AddMemberModal";
+import { SendEmailReportModal } from "@/components/splitter/SendEmailReportModal";
+import { LiveToasts } from "@/components/splitter/LiveToasts";
+import { ModuleLoader } from "@/components/shared/ModuleLoader";
+import {
+  SplitExpenseItem,
+  SettlementTransaction,
+  SplitMember,
+} from "@/types/splitter";
+
+import {
+  syncExpenseToCapFlowTransactions,
+  syncSettlementToCapFlowTransactions,
+  removeSyncedExpenseTransaction,
+} from "@/lib/splitter/splitterTransactionSync";
+
+type ActiveTab = "expenses" | "roadmap" | "export";
+
+export default function SplitterSessionDashboard() {
+  const params = useParams();
+  const router = useRouter();
+  const sessionId = params.id as string;
+
+  const { user } = useAuthStore();
+  const {
+    activeSession,
+    loading,
+    liveToasts,
+    loadSessionById,
+    addOrUpdateExpense,
+    deleteExpense,
+    recordSettlement,
+    updateSession,
+    startRealtimeSync,
+    stopRealtimeSync,
+    dismissToast,
+  } = useSplitterStore();
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<SplitExpenseItem | null>(null);
+  const [showSettlementModal, setShowSettlementModal] = useState(false);
+  const [suggestedSettlement, setSuggestedSettlement] = useState<SettlementTransaction | null>(null);
+
+  const [copiedId, setCopiedId] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<string | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+
+  // Load session & start real-time listener
+  useEffect(() => {
+    if (sessionId) {
+      loadSessionById(sessionId);
+      startRealtimeSync(sessionId);
+    }
+    return () => {
+      stopRealtimeSync();
+    };
+  }, [sessionId, loadSessionById, startRealtimeSync, stopRealtimeSync]);
+
+  const memberPositions = useMemo(() => {
+    if (!activeSession) return [];
+    return calculateMemberNetPositions(activeSession);
+  }, [activeSession]);
+
+  const simplifiedDebts = useMemo(() => {
+    return simplifyDebts(memberPositions);
+  }, [memberPositions]);
+
+  const totalGroupSpend = useMemo(() => {
+    if (!activeSession) return 0;
+    return activeSession.expenses.reduce((sum, e) => sum + e.amount, 0);
+  }, [activeSession]);
+
+  // Find viewer's current member profile in this session
+  const currentMember = useMemo(() => {
+    if (!activeSession) return undefined;
+    if (user?.id) {
+      const match = activeSession.members.find((m) => m.userId === user.id);
+      if (match) return match;
+    }
+    return activeSession.members[0];
+  }, [activeSession, user]);
+
+  const viewerPosition = useMemo(() => {
+    if (!currentMember) return null;
+    return memberPositions.find((p) => p.memberId === currentMember.id) || null;
+  }, [memberPositions, currentMember]);
+
+  const handleCopyId = async () => {
+    if (!activeSession) return;
+    try {
+      await navigator.clipboard.writeText(activeSession.sessionId);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!activeSession) return;
+    try {
+      const pdfBytes = await generateSplitterReportPDF(activeSession);
+      downloadSplitterPDF(pdfBytes, `CapFlow_${activeSession.sessionId}.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed:", e);
+    }
+  };
+
+  const handleShareWhatsApp = async () => {
+    if (!activeSession) return;
+    try {
+      const summary = generateWhatsAppSummary(activeSession);
+      const pdfBytes = await generateSplitterReportPDF(activeSession);
+      const pdfFile = new File(
+        [pdfBytes as any],
+        `CapFlow_Split_${activeSession.sessionId}.pdf`,
+        { type: "application/pdf" }
+      );
+
+      // Web Share API with physical PDF file attachment (Mobile Chrome, Safari iOS, PWA)
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.canShare &&
+        navigator.canShare({ files: [pdfFile] })
+      ) {
+        await navigator.share({
+          title: `CapFlow Split: ${activeSession.name}`,
+          text: summary,
+          files: [pdfFile],
+        });
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        // User cancelled share sheet
+        return;
+      }
+      console.warn("Native file sharing unavailable, falling back:", err);
+    }
+
+    // Fallback: Download PDF directly and open WhatsApp with summary + live download link
+    try {
+      const pdfBytes = await generateSplitterReportPDF(activeSession);
+      downloadSplitterPDF(pdfBytes, `CapFlow_Split_${activeSession.sessionId}.pdf`);
+    } catch (e) {
+      // ignore
+    }
+    const summary = generateWhatsAppSummary(activeSession);
+    const encoded = encodeURIComponent(summary);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+  };
+
+  const handleSendEmailReport = async () => {
+    if (!activeSession) return;
+    setIsSendingEmail(true);
+    setEmailStatus(null);
+    try {
+      const res = await fetch(
+        `/api/splitter/sessions/${encodeURIComponent(activeSession.sessionId)}/email-report`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setEmailStatus(data.message || "Email statement dispatched successfully!");
+      } else {
+        setEmailStatus(`Error: ${data.error || "Failed to dispatch email report"}`);
+      }
+    } catch (e: any) {
+      setEmailStatus(`Failed: ${e.message}`);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const toggleSessionStatus = async () => {
+    if (!activeSession) return;
+    const newStatus = activeSession.status === "active" ? "settled" : "active";
+    await updateSession(
+      activeSession.sessionId,
+      { status: newStatus },
+      currentMember?.name || user?.name || "Member"
+    );
+  };
+
+  if (loading && !activeSession) {
+    return (
+      <div className="min-h-full bg-[var(--bg-primary)] p-6">
+        <ModuleLoader
+          title="Loading Session..."
+          description="Calculating real-time net balances and debt simplification..."
+          variant="module"
+        />
+      </div>
+    );
+  }
+
+  if (!activeSession) {
+    return (
+      <div className="min-h-full bg-[var(--bg-primary)] p-8 text-center space-y-4">
+        <p className="text-sm font-semibold text-[var(--text-secondary)]">
+          Session not found or connection lost.
+        </p>
+        <Link
+          href="/budgets/splitter"
+          className="inline-block px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-bold"
+        >
+          Back to Sessions
+        </Link>
+      </div>
+    );
+  }
+
+  const isSessionSettled = activeSession.status === "settled";
+  const budgetCap = activeSession.budgetCap;
+  const budgetProgress =
+    budgetCap && budgetCap > 0
+      ? Math.min(Math.round((totalGroupSpend / budgetCap) * 100), 100)
+      : null;
+
+  return (
+    <div className="min-h-full bg-[var(--bg-primary)] pb-16 overflow-x-hidden w-full max-w-full">
+      {/* Real-time Floating Live Toasts */}
+      <LiveToasts toasts={liveToasts} onDismiss={dismissToast} />
+
+      {/* Top Header */}
+      <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link
+            href="/budgets/splitter"
+            className="p-2 -ml-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors"
+            aria-label="Back to Sessions"
+          >
+            <ArrowLeft size={20} />
+          </Link>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-[var(--text-primary)] truncate">
+                {activeSession.name}
+              </h1>
+              <span
+                className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  isSessionSettled
+                    ? "bg-[#10B981]/15 text-[#10B981]"
+                    : "bg-[#6366F1]/15 text-[#6366F1]"
+                }`}
+              >
+                {activeSession.status}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] font-mono text-[#6366F1] font-semibold">
+                {activeSession.sessionId}
+              </span>
+              <button
+                onClick={handleCopyId}
+                className="text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex items-center gap-0.5"
+                title="Copy Session ID"
+              >
+                {copiedId ? <Check size={11} className="text-[#10B981]" /> : <Copy size={11} />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={() => setShowQRModal(true)}
+            className="p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-[#6366F1] transition-all"
+            title="Show QR Code Invite"
+          >
+            <QrCode size={16} className="text-[#6366F1]" />
+          </button>
+          <button
+            onClick={toggleSessionStatus}
+            className={`p-2 rounded-xl border text-xs font-bold transition-all ${
+              isSessionSettled
+                ? "bg-[#10B981]/10 border-[#10B981]/30 text-[#10B981]"
+                : "bg-[var(--bg-card)] border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+            title={isSessionSettled ? "Reopen Session" : "Mark as Settled"}
+          >
+            {isSessionSettled ? <Unlock size={16} /> : <Lock size={16} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <div className="px-4 pt-4 w-full max-w-4xl mx-auto space-y-4 overflow-x-hidden">
+        {/* ── Dashboard Hero Card ── */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-[#6366F1]/10 via-[var(--bg-card)] to-[#10B981]/5 rounded-3xl border border-[var(--border-color)] p-5 shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                Total Group Spend
+              </span>
+              <p className="text-xl font-extrabold text-[var(--text-primary)] mt-0.5">
+                {formatSplitCurrency(totalGroupSpend, activeSession.currency)}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                Active Participants
+              </span>
+              <p className="text-xl font-extrabold text-[#6366F1] mt-0.5 flex items-center gap-1">
+                <Users2 size={18} />
+                {activeSession.members.length}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                Pending Settlements
+              </span>
+              <p
+                className={`text-xl font-extrabold mt-0.5 ${
+                  simplifiedDebts.length === 0 ? "text-[#10B981]" : "text-[#F59E0B]"
+                }`}
+              >
+                {simplifiedDebts.length}
+              </p>
+            </div>
+
+            <div>
+              <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                Your Live Net Position
+              </span>
+              {viewerPosition ? (
+                <p
+                  className={`text-base font-extrabold mt-0.5 ${
+                    viewerPosition.netBalance > 0.009
+                      ? "text-[#10B981]"
+                      : viewerPosition.netBalance < -0.009
+                      ? "text-[#EF4444]"
+                      : "text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {viewerPosition.netBalance > 0.009
+                    ? `Gets back ${formatSplitCurrency(viewerPosition.netBalance, activeSession.currency)}`
+                    : viewerPosition.netBalance < -0.009
+                    ? `Owes ${formatSplitCurrency(Math.abs(viewerPosition.netBalance), activeSession.currency)}`
+                    : "Settled up ✓"}
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--text-secondary)] mt-1">Not in group</p>
+              )}
+            </div>
+          </div>
+
+          {/* Budget Cap Progress Bar (if configured) */}
+          {budgetCap && budgetCap > 0 && (
+            <div className="pt-2 border-t border-[var(--border-color)]">
+              <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                <span className="text-[var(--text-secondary)]">
+                  Trip Budget: {formatSplitCurrency(totalGroupSpend, activeSession.currency)} /{" "}
+                  {formatSplitCurrency(budgetCap, activeSession.currency)}
+                </span>
+                <span
+                  className={
+                    budgetProgress! >= 90
+                      ? "text-[#EF4444] font-bold"
+                      : "text-[#6366F1] font-bold"
+                  }
+                >
+                  {budgetProgress}% used
+                </span>
+              </div>
+              <div className="h-2 bg-[var(--bg-primary)] rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    budgetProgress! >= 90
+                      ? "bg-[#EF4444]"
+                      : budgetProgress! >= 70
+                      ? "bg-[#F59E0B]"
+                      : "bg-[#6366F1]"
+                  }`}
+                  style={{ width: `${budgetProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Member Summary Widget (Links to Dedicated Members Page) ── */}
+        <div className="p-3.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Overlapping member avatars stack */}
+            <Link
+              href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
+              className="flex items-center -space-x-2 flex-shrink-0 hover:opacity-85 transition-opacity"
+              title="View all members"
+            >
+              {activeSession.members.slice(0, 4).map((m) => (
+                <div
+                  key={m.id}
+                  className="w-8 h-8 rounded-full border-2 border-[var(--bg-card)] flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                  style={{ backgroundColor: m.color }}
+                  title={m.name}
+                >
+                  {m.name.charAt(0).toUpperCase()}
+                </div>
+              ))}
+              {activeSession.members.length > 4 && (
+                <div className="w-8 h-8 rounded-full border-2 border-[var(--bg-card)] bg-[var(--bg-primary)] text-[var(--text-secondary)] flex items-center justify-center text-[10px] font-bold shadow-sm">
+                  +{activeSession.members.length - 4}
+                </div>
+              )}
+            </Link>
+
+            <Link
+              href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
+              className="min-w-0 group"
+            >
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[#6366F1] transition-colors truncate">
+                  {activeSession.members.length} Group {activeSession.members.length === 1 ? "Member" : "Members"}
+                </h3>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] flex-shrink-0">
+                  {activeSession.template === "family" ? "Household" : "Group Mode"}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)] truncate">
+                View member balances, shares & dues
+              </p>
+            </Link>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => setShowAddMemberModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-[#6366F1] text-xs font-semibold transition-all"
+              title="Add Member"
+            >
+              <UserPlus size={13} className="text-[#6366F1]" />
+              <span className="hidden sm:inline">Add</span>
+            </button>
+
+            <Link
+              href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#6366F1]/10 text-[#6366F1] hover:bg-[#6366F1] hover:text-white transition-all shadow-sm"
+              title="Open full members directory"
+            >
+              <span>Members</span>
+              <ChevronRight size={13} />
+            </Link>
+          </div>
+        </div>
+
+        {/* ── 3-Button Responsive Control Bar (Zero Horizontal or Vertical Cut on Mobile) ── */}
+        <div className="grid grid-cols-3 gap-1.5 p-1.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm w-full">
+          {[
+            {
+              id: "expenses",
+              label: "Expenses",
+              shortLabel: "Expenses",
+              icon: Receipt,
+              count: activeSession.expenses.length,
+            },
+            {
+              id: "roadmap",
+              label: "Settlement Roadmap",
+              shortLabel: "Settlements",
+              icon: HandCoins,
+              count: simplifiedDebts.length,
+            },
+            {
+              id: "export",
+              label: "Export & Activity",
+              shortLabel: "Export & Audit",
+              icon: FileText,
+              count: activeSession.auditLogs.length,
+            },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as ActiveTab)}
+                className={`relative py-2.5 px-1.5 sm:px-3 rounded-xl font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center w-full min-w-0 ${
+                  isSelected
+                    ? "bg-[#6366F1] text-white shadow-sm shadow-[#6366F1]/25"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]/50"
+                }`}
+              >
+                <div className="relative flex items-center justify-center flex-shrink-0">
+                  <Icon size={16} className="flex-shrink-0" />
+                  {/* Floating counter badge on mobile */}
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span
+                      className={`sm:hidden absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-extrabold flex items-center justify-center ${
+                        isSelected
+                          ? "bg-white text-[#6366F1]"
+                          : "bg-[#6366F1] text-white"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </div>
+
+                {/* Mobile short label, Desktop full label */}
+                <span className="text-[11px] sm:text-xs truncate font-bold">
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </span>
+
+                {/* Desktop pill count badge */}
+                {tab.count !== undefined && (
+                  <span
+                    className={`hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      isSelected
+                        ? "bg-white/20 text-white"
+                        : "bg-[var(--bg-primary)] text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Tab 1: Expenses Feed ── */}
+        {activeTab === "expenses" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                Itemized Expenses ({activeSession.expenses.length})
+              </h3>
+              <button
+                onClick={() => {
+                  setEditingExpense(null);
+                  setShowAddExpenseModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] shadow-sm shadow-[#6366F1]/20 transition-all"
+              >
+                <Plus size={14} />
+                <span>Log Expense</span>
+              </button>
+            </div>
+
+            {activeSession.expenses.length === 0 ? (
+              <div className="p-8 bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] text-center space-y-3">
+                <Receipt size={32} className="text-[var(--text-secondary)] mx-auto opacity-40" />
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
+                  No expenses recorded yet
+                </p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Tap "+ Log Expense" to add food, transport, tickets, or hotel bills.
+                </p>
+                <button
+                  onClick={() => setShowAddExpenseModal(true)}
+                  className="px-4 py-2 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5]"
+                >
+                  + Log First Expense
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {activeSession.expenses.map((exp) => {
+                  const memberNameMap = new Map(
+                    activeSession.members.map((m) => [m.id, m.name])
+                  );
+                  const payerSummary = exp.paidBy
+                    .map((p) => `${memberNameMap.get(p.memberId) || "Member"}`)
+                    .join(", ");
+
+                  return (
+                    <motion.div
+                      key={exp.id}
+                      layout
+                      className="p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-start justify-between gap-3 hover:border-[#6366F1]/30 transition-all shadow-sm"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        {/* Receipt Thumbnail if available */}
+                        {exp.receiptImage ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(exp.receiptImage!)}
+                            className="w-12 h-12 rounded-xl overflow-hidden border border-[var(--border-color)] flex-shrink-0 hover:opacity-80 transition-opacity"
+                            title="View receipt"
+                          >
+                            <img
+                              src={exp.receiptImage}
+                              alt="Receipt"
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center text-[#6366F1] flex-shrink-0">
+                            <Receipt size={18} />
+                          </div>
+                        )}
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-[var(--text-primary)] truncate">
+                              {exp.title}
+                            </h4>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--text-secondary)] flex-shrink-0">
+                              {exp.category}
+                            </span>
+                          </div>
+
+                          {/* Payer & Creator Attribution */}
+                          <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--text-secondary)] mt-1">
+                            <span>
+                              Paid by{" "}
+                              <strong className="text-[var(--text-primary)]">
+                                {payerSummary}
+                              </strong>
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Logged by{" "}
+                              <span className="text-[#6366F1] font-semibold">
+                                {exp.createdBy?.name || "Member"}
+                              </span>
+                            </span>
+                          </div>
+
+                          <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                            {new Date(exp.date).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}{" "}
+                            · {exp.splits.length} participants ({exp.splitMode} split)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Amount & Actions */}
+                      <div className="text-right flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-sm font-extrabold text-[var(--text-primary)]">
+                          {formatSplitCurrency(exp.amount, exp.currency)}
+                        </span>
+                        <div className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              setEditingExpense(exp);
+                              setShowAddExpenseModal(true);
+                            }}
+                            className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#6366F1] hover:bg-[var(--bg-primary)]"
+                            title="Edit expense"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => deleteExpense(activeSession.sessionId, exp.id)}
+                            className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#EF4444] hover:bg-[var(--bg-primary)]"
+                            title="Delete expense"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab 2: Settlement Roadmap (Min-Cash-Flow) ── */}
+        {activeTab === "roadmap" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  Optimized Settlement Roadmap
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Greedy Min-Cash-Flow algorithm: Absolute minimum transactions to settle all debts.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setSuggestedSettlement(null);
+                  setShowSettlementModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all shadow-sm shadow-[#10B981]/20"
+              >
+                <Plus size={14} />
+                <span>Record Payment</span>
+              </button>
+            </div>
+
+            {simplifiedDebts.length === 0 ? (
+              <div className="p-8 bg-[var(--bg-card)] rounded-3xl border border-[#10B981]/30 text-center space-y-2">
+                <div className="w-12 h-12 rounded-full bg-[#10B981]/15 text-[#10B981] flex items-center justify-center mx-auto">
+                  <Check size={24} strokeWidth={3} />
+                </div>
+                <h4 className="text-sm font-bold text-[var(--text-primary)]">
+                  All Debts Settled Up!
+                </h4>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  There are no pending payments needed between group members.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {simplifiedDebts.map((st, idx) => (
+                  <motion.div
+                    key={idx}
+                    layout
+                    className="p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between gap-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0">
+                        <HandCoins size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-sm">
+                          <strong className="text-[#EF4444] font-bold truncate">
+                            {st.fromMemberName}
+                          </strong>
+                          <span className="text-[var(--text-secondary)] text-xs">pays</span>
+                          <strong className="text-[#10B981] font-bold truncate">
+                            {st.toMemberName}
+                          </strong>
+                        </div>
+                        <span className="text-[10px] text-[var(--text-secondary)]">
+                          Simplified peer-to-peer settlement
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <span className="text-base font-extrabold text-[var(--text-primary)]">
+                        {formatSplitCurrency(st.amount, activeSession.currency)}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setSuggestedSettlement(st);
+                          setShowSettlementModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all shadow-sm"
+                      >
+                        Mark as Settled
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
+            {/* Past Settlements History */}
+            {activeSession.settlements && activeSession.settlements.length > 0 && (
+              <div className="pt-4 border-t border-[var(--border-color)] space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  Settlement History ({activeSession.settlements.length})
+                </h4>
+                <div className="space-y-2">
+                  {activeSession.settlements.map((st) => {
+                    const memberNameMap = new Map(
+                      activeSession.members.map((m) => [m.id, m.name])
+                    );
+                    const fromName = memberNameMap.get(st.fromMemberId) || "Member";
+                    const toName = memberNameMap.get(st.toMemberId) || "Member";
+
+                    return (
+                      <div
+                        key={st.id}
+                        className="p-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <p className="font-semibold text-[var(--text-primary)]">
+                            {fromName} paid {toName}
+                          </p>
+                          <p className="text-[10px] text-[var(--text-secondary)]">
+                            {new Date(st.date).toLocaleDateString()} {st.notes ? `· ${st.notes}` : ""}
+                          </p>
+                        </div>
+                        <span className="font-bold text-[#10B981]">
+                          {formatSplitCurrency(st.amount, activeSession.currency)} ✓
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab 3: Export & Activity Suite ── */}
+        {activeTab === "export" && (
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                Professional PDF Reporting & Instant Share
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                Download verified statement ledgers or dispatch directly to members via WhatsApp and Email
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* PDF Download Card */}
+              <div className="p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="w-10 h-10 rounded-2xl bg-[#6366F1]/10 text-[#6366F1] flex items-center justify-center mb-3">
+                    <Download size={20} />
+                  </div>
+                  <h4 className="text-sm font-bold text-[var(--text-primary)]">
+                    Download PDF Report
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
+                    Client-side fintech audit ledger containing full itemized expenses, gain/loss tables, and settlement roadmap.
+                  </p>
+                </div>
+                <button
+                  onClick={handleDownloadPDF}
+                  className="w-full py-2.5 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Download size={14} />
+                  Download Official PDF
+                </button>
+              </div>
+
+              {/* WhatsApp Share Card */}
+              <div className="p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="w-10 h-10 rounded-2xl bg-[#10B981]/10 text-[#10B981] flex items-center justify-center mb-3">
+                    <Share2 size={20} />
+                  </div>
+                  <h4 className="text-sm font-bold text-[var(--text-primary)]">
+                    Share via WhatsApp (with PDF)
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
+                    Dispatches verified group summary, attaches official PDF statement via native mobile share, and includes a live download link.
+                  </p>
+                </div>
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="w-full py-2.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-[#10B981]/20"
+                >
+                  <Share2 size={14} />
+                  Share to WhatsApp with PDF
+                </button>
+              </div>
+
+              {/* Email PDF Dispatch Card */}
+              <div className="p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="w-10 h-10 rounded-2xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center mb-3">
+                    <Mail size={20} />
+                  </div>
+                  <h4 className="text-sm font-bold text-[var(--text-primary)]">
+                    Email Statement to Members
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">
+                    Automated backend dispatch compiling the report PDF as an attachment to all members with registered emails.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowEmailModal(true)}
+                  className="w-full py-2.5 rounded-xl bg-[#F59E0B] text-slate-900 text-xs font-bold hover:bg-[#D97706] transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-[#F59E0B]/20"
+                >
+                  <Mail size={14} />
+                  Send Email Report
+                </button>
+              </div>
+            </div>
+
+            {emailStatus && (
+              <div className="p-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl text-xs font-semibold text-[var(--text-primary)]">
+                {emailStatus}
+              </div>
+            )}
+
+            {/* Chronological Activity & Audit Trail */}
+            <div className="pt-4 border-t border-[var(--border-color)] space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                    Chronological Activity & Audit Trail ({activeSession.auditLogs.length})
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Immutable event log of every expense, settlement, and group update
+                  </p>
+                </div>
+              </div>
+
+              {activeSession.auditLogs.length === 0 ? (
+                <div className="p-6 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] text-center text-xs text-[var(--text-secondary)]">
+                  No activity recorded yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeSession.auditLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] flex items-start gap-2.5 text-xs"
+                    >
+                      <History size={14} className="text-[#6366F1] flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-[var(--text-primary)]">
+                          {log.action}
+                        </p>
+                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                          {new Date(log.timestamp).toLocaleString()} · Logged by {log.memberName}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Modals ── */}
+      <QRCodeModal
+        open={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        sessionId={activeSession.sessionId}
+        sessionName={activeSession.name}
+      />
+
+      <AddSplitExpenseModal
+        open={showAddExpenseModal}
+        onClose={() => {
+          setShowAddExpenseModal(false);
+          setEditingExpense(null);
+        }}
+        members={activeSession.members}
+        currency={activeSession.currency}
+        sessionId={activeSession.sessionId}
+        currentMember={currentMember}
+        existingExpense={editingExpense}
+        onSave={async (expData) => {
+          await addOrUpdateExpense(activeSession.sessionId, expData);
+        }}
+      />
+
+      <RecordSettlementModal
+        open={showSettlementModal}
+        onClose={() => {
+          setShowSettlementModal(false);
+          setSuggestedSettlement(null);
+        }}
+        members={activeSession.members}
+        currency={activeSession.currency}
+        suggestedTransaction={suggestedSettlement}
+        onRecord={async (stlData) => {
+          await recordSettlement(activeSession.sessionId, stlData);
+        }}
+      />
+
+      <AddMemberModal
+        open={showAddMemberModal}
+        onClose={() => setShowAddMemberModal(false)}
+        existingMembers={activeSession.members}
+        onAddMember={async (newMember) => {
+          const updatedMembers = [...activeSession.members, newMember];
+          await updateSession(
+            activeSession.sessionId,
+            { members: updatedMembers },
+            currentMember?.name || user?.name || "Member"
+          );
+        }}
+      />
+
+      <SendEmailReportModal
+        open={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        session={activeSession}
+        currentUserEmail={user?.email}
+        currentUserName={user?.name}
+        onDispatched={(msg) => setEmailStatus(msg)}
+      />
+
+      {/* Receipt Image Preview Modal */}
+      <AnimatePresence>
+        {previewImage && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+              onClick={() => setPreviewImage(null)}
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-lg w-full bg-[var(--bg-card)] rounded-3xl overflow-hidden p-2 z-10"
+            >
+              <img
+                src={previewImage}
+                alt="Receipt Full Preview"
+                className="w-full max-h-[80vh] object-contain rounded-2xl"
+              />
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/60 text-white hover:bg-black"
+              >
+                <X size={18} />
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

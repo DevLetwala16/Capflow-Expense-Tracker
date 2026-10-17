@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Target,
   CreditCard,
+  Users2,
   Tags,
   DownloadCloud,
   Settings,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/calendar", icon: CalendarDays, label: "Calendar" },
   { href: "/budgets", icon: Target, label: "Budgets & Goals" },
+  { href: "/budgets/splitter", icon: Users2, label: "Splitter & Groups" },
   { href: "/emis", icon: CreditCard, label: "EMI Management" },
 ];
 
