@@ -66,46 +66,46 @@ export default function SplitterSessionsHub() {
   return (
     <div className="min-h-full bg-[var(--bg-primary)] pb-12">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-30 bg-[var(--bg-primary)]/95 backdrop-blur-md border-b border-[var(--border-color)] px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Link
             href="/budgets"
-            className="p-2 -ml-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors"
+            className="p-1.5 -ml-1 rounded-xl text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors shrink-0"
             aria-label="Back to Budgets"
           >
-            <ArrowLeft size={20} />
+            <ArrowLeft size={18} />
           </Link>
-          <div>
-            <h1 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-base font-bold text-[var(--text-primary)] leading-tight flex items-center gap-1.5 truncate">
               Splitter Sessions
               {isOffline && (
-                <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B]">
-                  <WifiOff size={10} />
-                  Offline Mode
+                <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B] shrink-0">
+                  <WifiOff size={9} />
+                  Offline
                 </span>
               )}
             </h1>
-            <p className="text-xs text-[var(--text-secondary)]">
-              Multi-day trips, shared flats & group expenses
+            <p className="text-[11px] text-[var(--text-secondary)] leading-tight hidden xs:block truncate">
+              Trips, shared flats & group expenses
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => setShowJoinModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs font-semibold hover:border-[#6366F1] transition-all"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs font-semibold hover:border-[#6366F1] transition-all whitespace-nowrap active:scale-95"
             title="Scan QR Code or enter Session ID to join"
           >
-            <QrCode size={14} className="text-[#6366F1]" />
-            <span>Scan QR / Join</span>
+            <QrCode size={13} className="text-[#6366F1] shrink-0" />
+            <span><span className="hidden sm:inline">Scan / </span>Join</span>
           </button>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] transition-all shadow-sm shadow-[#6366F1]/30"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] transition-all shadow-sm shadow-[#6366F1]/30 whitespace-nowrap active:scale-95"
           >
-            <Plus size={14} />
-            <span>Create Session</span>
+            <Plus size={13} className="shrink-0" />
+            <span><span className="hidden sm:inline">Create </span>Session</span>
           </button>
         </div>
       </header>

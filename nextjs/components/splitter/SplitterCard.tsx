@@ -23,83 +23,83 @@ export function SplitterCard({ sessions }: SplitterCardProps) {
   return (
     <motion.div
       layout
-      className="relative overflow-hidden bg-gradient-to-br from-[#6366F1]/10 via-[var(--bg-card)] to-[#10B981]/5 rounded-3xl border border-[#6366F1]/20 p-5 shadow-sm hover:shadow-md transition-all group"
+      className="relative overflow-hidden bg-gradient-to-br from-[#6366F1]/10 via-[var(--bg-card)] to-[#10B981]/5 rounded-2xl border border-[#6366F1]/20 p-3.5 sm:p-4 shadow-sm hover:shadow-md transition-all group"
     >
       {/* Decorative background glow */}
-      <div className="absolute top-0 right-0 -mt-6 -mr-6 w-32 h-32 bg-[#6366F1]/10 rounded-full blur-2xl pointer-events-none" />
+      <div className="absolute top-0 right-0 -mt-6 -mr-6 w-24 h-24 bg-[#6366F1]/10 rounded-full blur-xl pointer-events-none" />
 
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white shadow-md shadow-[#6366F1]/20">
-            <Users2 size={24} />
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#6366F1] to-[#8B5CF6] flex items-center justify-center text-white shadow-sm shadow-[#6366F1]/30 shrink-0">
+            <Users2 size={18} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-[var(--text-primary)]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="text-sm font-bold text-[var(--text-primary)] truncate">
                 Splitter & Group Expenses
               </h3>
-              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1]">
-                <Sparkles size={10} />
+              <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1]">
+                <Sparkles size={9} />
                 Multi-User
               </span>
             </div>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-              Multi-day trips, household splitting & debt simplification
+            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate">
+              Multi-day trips, shared flats & debt simplification
             </p>
           </div>
         </div>
 
         <Link
           href="/budgets/splitter"
-          className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] group-hover:bg-[#6366F1] group-hover:text-white transition-all shadow-sm"
+          className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] group-hover:bg-[#6366F1] group-hover:text-white transition-all shadow-sm"
           aria-label="Open Splitter Hub"
         >
-          <ArrowRight size={16} />
+          <ArrowRight size={14} />
         </Link>
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-3 gap-2 py-3 px-3.5 bg-[var(--bg-primary)]/80 backdrop-blur-sm rounded-2xl border border-[var(--border-color)]">
+      <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-[var(--bg-primary)]/80 backdrop-blur-sm rounded-xl border border-[var(--border-color)]">
         <div>
-          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-secondary)]">
+          <span className="text-[9px] uppercase font-bold tracking-wider text-[var(--text-secondary)] block">
             Active Trips
           </span>
-          <p className="text-base font-extrabold text-[#6366F1] mt-0.5">
+          <p className="text-sm font-extrabold text-[#6366F1] mt-0.5">
             {activeSessions.length}
           </p>
         </div>
         <div>
-          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-secondary)]">
+          <span className="text-[9px] uppercase font-bold tracking-wider text-[var(--text-secondary)] block">
             Group Spend
           </span>
-          <p className="text-base font-extrabold text-[var(--text-primary)] mt-0.5 truncate">
+          <p className="text-sm font-extrabold text-[var(--text-primary)] mt-0.5 truncate">
             {formatSplitCurrency(totalActiveSpend, "INR")}
           </p>
         </div>
         <div>
-          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-secondary)]">
+          <span className="text-[9px] uppercase font-bold tracking-wider text-[var(--text-secondary)] block">
             Settled
           </span>
-          <p className="text-base font-extrabold text-[#10B981] mt-0.5 flex items-center gap-1">
-            <CheckCircle2 size={13} />
+          <p className="text-sm font-extrabold text-[#10B981] mt-0.5 flex items-center gap-1">
+            <CheckCircle2 size={12} />
             {settledSessions.length}
           </p>
         </div>
       </div>
 
       {/* Quick Launch CTA */}
-      <div className="flex items-center justify-between mt-4 pt-1">
-        <span className="text-xs text-[var(--text-secondary)]">
+      <div className="flex items-center justify-between mt-2.5 pt-0.5">
+        <span className="text-[11px] text-[var(--text-secondary)] truncate max-w-[65%]">
           {activeSessions.length > 0
             ? `${activeSessions[0].name} · ${activeSessions[0].members.length} members`
             : "No active trips right now"}
         </span>
         <Link
           href="/budgets/splitter"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6366F1] hover:underline"
+          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6366F1] hover:underline shrink-0"
         >
           Open Splitter Hub
-          <ArrowRight size={13} />
+          <ArrowRight size={12} />
         </Link>
       </div>
     </motion.div>
