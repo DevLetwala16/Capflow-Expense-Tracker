@@ -1,5 +1,4 @@
-const { ensureAllDirs } = require("./scripts/prepare-next");
-
+/** @type {import("next").NextConfig} */
 const withPWA = require("@ducanh2912/next-pwa").default({
   dest: "public",
   cacheOnFrontEndNav: false,
@@ -43,19 +42,8 @@ const nextConfig = {
     }
     return [];
   },
-  // Fix HMR on Windows paths with spaces and ensure .next directories exist
+  // Fix HMR on Windows paths with spaces — use polling as fallback watcher
   webpack: (config, { dev }) => {
-    config.plugins.push({
-      apply: (compiler) => {
-        compiler.hooks.beforeCompile.tap("EnsureDirsPlugin", () => {
-          ensureAllDirs();
-        });
-        compiler.hooks.done.tap("EnsureDirsPlugin", () => {
-          ensureAllDirs();
-        });
-      },
-    });
-
     if (dev) {
       config.watchOptions = {
         poll: 1000,          // Check for changes every 1s

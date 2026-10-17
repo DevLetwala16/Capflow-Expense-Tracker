@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/show-ip.js",
-    "prebuild": "node scripts/prepare-next.js",
     "dev": "cross-env WATCHPACK_POLLING=true next dev -H 0.0.0.0",
     "build": "cross-env NODE_ENV=production next build",
     "start": "next start",
