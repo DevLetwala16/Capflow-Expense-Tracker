@@ -23,7 +23,18 @@ export async function GET(
     }
 
     const session = sessionDoc as unknown as SplitSession;
-    const pdfBytes = await generateSplitterReportPDF(session);
+    const { searchParams } = new URL(req.url);
+    const filterMode = (searchParams.get('filterMode') as 'whole' | 'last_month' | 'custom') || 'whole';
+    const startDate = searchParams.get('startDate') || undefined;
+    const endDate = searchParams.get('endDate') || undefined;
+    const dateRangeLabel = searchParams.get('dateRangeLabel') || undefined;
+
+    const pdfBytes = await generateSplitterReportPDF(session, {
+      filterMode,
+      startDate,
+      endDate,
+      dateRangeLabel,
+    });
 
     return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,

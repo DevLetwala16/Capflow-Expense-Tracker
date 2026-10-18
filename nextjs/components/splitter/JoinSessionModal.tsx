@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -38,6 +39,7 @@ export function JoinSessionModal({
   initialSessionId = "",
   onJoin,
 }: JoinSessionModalProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"scan" | "manual">(
     initialSessionId ? "manual" : "scan"
   );
@@ -47,6 +49,7 @@ export function JoinSessionModal({
   const [submitting, setSubmitting] = useState(false);
   const [joiningState, setJoiningState] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [alreadyJoinedId, setAlreadyJoinedId] = useState<string | null>(null);
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [autoJoinDirectly, setAutoJoinDirectly] = useState(true);
 
@@ -61,6 +64,7 @@ export function JoinSessionModal({
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Stop camera stream safely
   const stopCamera = useCallback(() => {
@@ -129,7 +133,20 @@ export function JoinSessionModal({
         stopCamera();
         onClose();
       } catch (err: any) {
-        setError(err.message || "Failed to join session. Please verify the ID or QR code.");
+        const isDuplicate =
+          err?.alreadyJoined ||
+          err?.status === 409 ||
+          (err?.message && err.message.toLowerCase().includes("already joined"));
+        if (isDuplicate) {
+          const sId = err.sessionId || cleanSessionId;
+          setAlreadyJoinedId(sId);
+          setError(
+            err.message ||
+              `You have already joined session ${sId}. You cannot join the same session multiple times.`
+          );
+        } else {
+          setError(err.message || "Failed to join session. Please verify the ID or QR code.");
+        }
         setJoiningState(null);
       } finally {
         setSubmitting(false);
@@ -187,16 +204,22 @@ export function JoinSessionModal({
 
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Camera API is not supported on this browser or platform.");
+          throw new Error("Live WebRTC camera is unavailable or not supported in this browser. Please use 'Take Photo with Phone Camera' below.");
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: targetFacing,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        });
+        let stream: MediaStream | null = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: targetFacing },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+          });
+        } catch (constraintErr) {
+          // Fallback to basic unconstrained video if resolution or facingMode was rejected
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
 
         streamRef.current = stream;
 
@@ -229,12 +252,16 @@ export function JoinSessionModal({
             }
           }
         }, 250);
-      } catch (err) {
+      } catch (err: any) {
         console.error("[QR Scanner] Camera error:", err);
+        const isPermission =
+          err?.name === "NotAllowedError" ||
+          err?.name === "PermissionDeniedError" ||
+          (err?.message && err.message.toLowerCase().includes("permission denied"));
         setCameraError(
-          err instanceof Error
-            ? err.message
-            : "Unable to access device camera. Please check permissions or upload a QR photo below."
+          isPermission
+            ? "Camera permission was denied. Tap 'Take Photo with Phone Camera' below to launch your phone's camera directly, or grant camera access in browser site settings."
+            : (err?.message || "Unable to access device camera. Please use 'Take Photo with Phone Camera' below.")
         );
         setCameraActive(false);
         setCameraStarting(false);
@@ -377,13 +404,32 @@ export function JoinSessionModal({
               </button>
             </div>
 
-            {/* Error Message */}
-            {error && (
+            {/* Already Joined Session Notice */}
+            {alreadyJoinedId ? (
+              <div className="p-3.5 mb-3 bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-2xl flex flex-col gap-2.5">
+                <div className="flex items-start gap-2 text-xs font-semibold text-[#F59E0B]">
+                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>{error || `You are already a member of session ${alreadyJoinedId}.`}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    onClose();
+                    router.push(`/budgets/splitter/${encodeURIComponent(alreadyJoinedId)}`);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-[#F59E0B] text-slate-900 text-xs font-bold hover:bg-[#D97706] transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <span>Open Session Directly</span>
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+            ) : error ? (
               <div className="p-3 mb-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-2xl text-xs font-semibold text-[#EF4444] flex items-start gap-2">
                 <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
-            )}
+            ) : null}
 
             {/* Connecting State Banner */}
             {joiningState && (
@@ -479,29 +525,71 @@ export function JoinSessionModal({
                   )}
                 </div>
 
-                {/* Camera Permission / Error Help */}
+                {/* Camera Permission / Error Recovery Card */}
                 {cameraError && (
-                  <div className="p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/20 text-xs text-[#EF4444] flex items-center gap-2">
-                    <AlertTriangle size={14} className="flex-shrink-0" />
-                    <span>{cameraError}</span>
+                  <div className="p-3.5 rounded-2xl bg-[#EF4444]/10 border border-[#EF4444]/25 space-y-2.5">
+                    <div className="flex items-start gap-2 text-xs text-[#EF4444]">
+                      <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-bold">Camera Access Blocked or Restricted</p>
+                        <p className="text-[11px] mt-0.5 opacity-90">{cameraError}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => nativeCameraInputRef.current?.click()}
+                        className="py-2 px-2.5 rounded-xl bg-[#6366F1] text-white text-[11px] font-bold hover:bg-[#4F46E5] transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <Camera size={13} />
+                        <span>Open Phone Camera</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startCamera()}
+                        className="py-2 px-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-[11px] font-semibold hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw size={12} />
+                        <span>Retry Permission</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {/* Upload QR Photo fallback */}
-                <div className="flex items-center gap-2">
+                {/* Mobile Camera & Photo Scanner Fallbacks */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => nativeCameraInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-xl bg-[#6366F1]/10 text-[#6366F1] border border-[#6366F1]/30 hover:bg-[#6366F1]/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Camera size={14} />
+                    <span>Snap with Camera</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full py-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-semibold hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
+                    className="py-2.5 px-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-semibold hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
                   >
-                    <UploadCloud size={14} className="text-[#6366F1]" />
-                    <span>Upload QR Image / Screenshot</span>
+                    <UploadCloud size={14} />
+                    <span>Pick Image / File</span>
                   </button>
+
+                  {/* Native camera direct snap input */}
+                  <input
+                    ref={nativeCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+                  {/* Photo picker input without capture attribute */}
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     onChange={handlePhotoUpload}
                     className="hidden"
                   />

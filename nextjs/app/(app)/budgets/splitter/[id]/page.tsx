@@ -47,6 +47,8 @@ import { QRCodeModal } from "@/components/splitter/QRCodeModal";
 import { AddSplitExpenseModal } from "@/components/splitter/AddSplitExpenseModal";
 import { RecordSettlementModal } from "@/components/splitter/RecordSettlementModal";
 import { AddMemberModal } from "@/components/splitter/AddMemberModal";
+import { EditSessionModal } from "@/components/splitter/EditSessionModal";
+import { DeleteSessionModal } from "@/components/splitter/DeleteSessionModal";
 import { SendEmailReportModal } from "@/components/splitter/SendEmailReportModal";
 import { LiveToasts } from "@/components/splitter/LiveToasts";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
@@ -79,6 +81,7 @@ export default function SplitterSessionDashboard() {
     deleteExpense,
     recordSettlement,
     updateSession,
+    deleteSession,
     startRealtimeSync,
     stopRealtimeSync,
     dismissToast,
@@ -86,10 +89,17 @@ export default function SplitterSessionDashboard() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("expenses");
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showEditSessionModal, setShowEditSessionModal] = useState(false);
+  const [showDeleteSessionModal, setShowDeleteSessionModal] = useState(false);
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<SplitExpenseItem | null>(null);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [suggestedSettlement, setSuggestedSettlement] = useState<SettlementTransaction | null>(null);
+
+  // Date filtering state for export & share
+  const [exportFilterMode, setExportFilterMode] = useState<"whole" | "last_month" | "custom">("whole");
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
 
   const [copiedId, setCopiedId] = useState(false);
   const [emailStatus, setEmailStatus] = useState<string | null>(null);
@@ -149,11 +159,57 @@ export default function SplitterSessionDashboard() {
     }
   };
 
+  // Date filtering options for export tab
+  const exportFilterOptions = useMemo(() => {
+    let label = "Whole Transactions (All-Time)";
+    if (exportFilterMode === "last_month") {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split("T")[0];
+      label = `Last Month (${firstDay} to ${lastDay})`;
+    } else if (exportFilterMode === "custom") {
+      label = `Custom Range (${exportStartDate || "Start"} to ${exportEndDate || "Now"})`;
+    }
+    return {
+      filterMode: exportFilterMode,
+      startDate: exportFilterMode === "custom" && exportStartDate ? exportStartDate : undefined,
+      endDate: exportFilterMode === "custom" && exportEndDate ? exportEndDate : undefined,
+      dateRangeLabel: label,
+    };
+  }, [exportFilterMode, exportStartDate, exportEndDate]);
+
+  const exportFilteredExpenses = useMemo(() => {
+    if (!activeSession) return [];
+    if (exportFilterMode === "last_month") {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split("T")[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split("T")[0];
+      return activeSession.expenses.filter((e) => {
+        const d = e.date ? e.date.split("T")[0] : "";
+        return d >= firstDay && d <= lastDay;
+      });
+    }
+    if (exportFilterMode === "custom" && (exportStartDate || exportEndDate)) {
+      return activeSession.expenses.filter((e) => {
+        const d = e.date ? e.date.split("T")[0] : "";
+        if (exportStartDate && d < exportStartDate) return false;
+        if (exportEndDate && d > exportEndDate) return false;
+        return true;
+      });
+    }
+    return activeSession.expenses;
+  }, [activeSession, exportFilterMode, exportStartDate, exportEndDate]);
+
+  const exportFilteredSpend = useMemo(() => {
+    return exportFilteredExpenses.reduce((s, e) => s + e.amount, 0);
+  }, [exportFilteredExpenses]);
+
   const handleDownloadPDF = async () => {
     if (!activeSession) return;
     try {
-      const pdfBytes = await generateSplitterReportPDF(activeSession);
-      downloadSplitterPDF(pdfBytes, `CapFlow_${activeSession.sessionId}.pdf`);
+      const pdfBytes = await generateSplitterReportPDF(activeSession, exportFilterOptions);
+      const suffix = exportFilterMode !== "whole" ? `_${exportFilterMode}` : "";
+      downloadSplitterPDF(pdfBytes, `CapFlow_${activeSession.sessionId}${suffix}.pdf`);
     } catch (e) {
       console.error("PDF generation failed:", e);
     }
@@ -162,8 +218,8 @@ export default function SplitterSessionDashboard() {
   const handleShareWhatsApp = async () => {
     if (!activeSession) return;
     try {
-      const summary = generateWhatsAppSummary(activeSession);
-      const pdfBytes = await generateSplitterReportPDF(activeSession);
+      const summary = generateWhatsAppSummary(activeSession, exportFilterOptions);
+      const pdfBytes = await generateSplitterReportPDF(activeSession, exportFilterOptions);
       const pdfFile = new File(
         [pdfBytes as any],
         `CapFlow_Split_${activeSession.sessionId}.pdf`,
@@ -193,14 +249,20 @@ export default function SplitterSessionDashboard() {
 
     // Fallback: Download PDF directly and open WhatsApp with summary + live download link
     try {
-      const pdfBytes = await generateSplitterReportPDF(activeSession);
+      const pdfBytes = await generateSplitterReportPDF(activeSession, exportFilterOptions);
       downloadSplitterPDF(pdfBytes, `CapFlow_Split_${activeSession.sessionId}.pdf`);
     } catch (e) {
       // ignore
     }
-    const summary = generateWhatsAppSummary(activeSession);
+    const summary = generateWhatsAppSummary(activeSession, exportFilterOptions);
     const encoded = encodeURIComponent(summary);
     window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+  };
+
+  const handleConfirmDeleteSession = async () => {
+    if (!activeSession) return;
+    await deleteSession(activeSession.sessionId);
+    router.push("/budgets/splitter");
   };
 
   const handleSendEmailReport = async () => {
@@ -329,6 +391,20 @@ export default function SplitterSessionDashboard() {
             <QrCode size={16} className="text-[#6366F1]" />
           </button>
           <button
+            onClick={() => setShowEditSessionModal(true)}
+            className="p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#6366F1] hover:border-[#6366F1] transition-all"
+            title="Edit Session Details"
+          >
+            <Edit2 size={16} />
+          </button>
+          <button
+            onClick={() => setShowDeleteSessionModal(true)}
+            className="p-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] hover:border-[#EF4444] transition-all"
+            title="Delete Session"
+          >
+            <Trash2 size={16} />
+          </button>
+          <button
             onClick={toggleSessionStatus}
             className={`p-2 rounded-xl border text-xs font-bold transition-all ${
               isSessionSettled
@@ -440,27 +516,27 @@ export default function SplitterSessionDashboard() {
         </div>
 
         {/* ── Member Summary Widget (Links to Dedicated Members Page) ── */}
-        <div className="p-3.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl flex items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="p-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl flex items-center justify-between gap-2.5 sm:gap-3 shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
             {/* Overlapping member avatars stack */}
             <Link
               href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
               className="flex items-center -space-x-2 flex-shrink-0 hover:opacity-85 transition-opacity"
               title="View all members"
             >
-              {activeSession.members.slice(0, 4).map((m) => (
+              {activeSession.members.slice(0, 3).map((m) => (
                 <div
                   key={m.id}
-                  className="w-8 h-8 rounded-full border-2 border-[var(--bg-card)] flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-[var(--bg-card)] flex items-center justify-center text-white text-[11px] sm:text-xs font-bold shadow-sm"
                   style={{ backgroundColor: m.color }}
                   title={m.name}
                 >
                   {m.name.charAt(0).toUpperCase()}
                 </div>
               ))}
-              {activeSession.members.length > 4 && (
-                <div className="w-8 h-8 rounded-full border-2 border-[var(--bg-card)] bg-[var(--bg-primary)] text-[var(--text-secondary)] flex items-center justify-center text-[10px] font-bold shadow-sm">
-                  +{activeSession.members.length - 4}
+              {activeSession.members.length > 3 && (
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-[var(--bg-card)] bg-[var(--bg-primary)] text-[var(--text-secondary)] flex items-center justify-center text-[10px] font-bold shadow-sm">
+                  +{activeSession.members.length - 3}
                 </div>
               )}
             </Link>
@@ -470,15 +546,15 @@ export default function SplitterSessionDashboard() {
               className="min-w-0 group"
             >
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[#6366F1] transition-colors truncate">
-                  {activeSession.members.length} Group {activeSession.members.length === 1 ? "Member" : "Members"}
+                <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[#6366F1] transition-colors whitespace-nowrap">
+                  {activeSession.members.length} {activeSession.members.length === 1 ? "Member" : "Members"}
                 </h3>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] flex-shrink-0">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)] flex-shrink-0">
                   {activeSession.template === "family" ? "Household" : "Group Mode"}
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)] truncate">
-                View member balances, shares & dues
+              <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 sm:line-clamp-none">
+                View balances, shares & dues
               </p>
             </Link>
           </div>
@@ -486,16 +562,16 @@ export default function SplitterSessionDashboard() {
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               onClick={() => setShowAddMemberModal(true)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-[#6366F1] text-xs font-semibold transition-all"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-[#6366F1] text-xs font-semibold transition-all flex items-center gap-1"
               title="Add Member"
             >
-              <UserPlus size={13} className="text-[#6366F1]" />
+              <UserPlus size={14} className="text-[#6366F1]" />
               <span className="hidden sm:inline">Add</span>
             </button>
 
             <Link
               href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#6366F1]/10 text-[#6366F1] hover:bg-[#6366F1] hover:text-white transition-all shadow-sm"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-[#6366F1]/10 text-[#6366F1] hover:bg-[#6366F1] hover:text-white transition-all shadow-sm"
               title="Open full members directory"
             >
               <span>Members</span>
@@ -766,40 +842,48 @@ export default function SplitterSessionDashboard() {
                   <motion.div
                     key={idx}
                     layout
-                    className="p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between gap-3 shadow-sm"
+                    className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/30 transition-all space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
                         <HandCoins size={18} />
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 text-sm">
-                          <strong className="text-[#EF4444] font-bold truncate">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
+                          <span className="font-bold text-[#EF4444] break-words">
                             {st.fromMemberName}
-                          </strong>
-                          <span className="text-[var(--text-secondary)] text-xs">pays</span>
-                          <strong className="text-[#10B981] font-bold truncate">
+                          </span>
+                          <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
+                            pays
+                          </span>
+                          <span className="font-bold text-[#10B981] break-words">
                             {st.toMemberName}
-                          </strong>
+                          </span>
                         </div>
-                        <span className="text-[10px] text-[var(--text-secondary)]">
+                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
                           Simplified peer-to-peer settlement
-                        </span>
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-base font-extrabold text-[var(--text-primary)]">
-                        {formatSplitCurrency(st.amount, activeSession.currency)}
-                      </span>
+                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
+                      <div className="flex flex-col sm:items-end">
+                        <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
+                          Settlement Amount
+                        </span>
+                        <span className="text-base font-extrabold text-[var(--text-primary)]">
+                          {formatSplitCurrency(st.amount, activeSession.currency)}
+                        </span>
+                      </div>
                       <button
                         onClick={() => {
                           setSuggestedSettlement(st);
                           setShowSettlementModal(true);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all shadow-sm"
+                        className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
                       >
-                        Mark as Settled
+                        <Check size={13} strokeWidth={2.5} />
+                        <span>Mark as Settled</span>
                       </button>
                     </div>
                   </motion.div>
@@ -824,17 +908,18 @@ export default function SplitterSessionDashboard() {
                     return (
                       <div
                         key={st.id}
-                        className="p-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] flex items-center justify-between text-xs"
+                        className="p-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] flex items-center justify-between text-xs gap-3"
                       >
-                        <div>
-                          <p className="font-semibold text-[var(--text-primary)]">
-                            {fromName} paid {toName}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-[var(--text-primary)] break-words">
+                            <span className="text-[#EF4444] font-bold">{fromName}</span> paid{" "}
+                            <span className="text-[#10B981] font-bold">{toName}</span>
                           </p>
-                          <p className="text-[10px] text-[var(--text-secondary)]">
+                          <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
                             {new Date(st.date).toLocaleDateString()} {st.notes ? `· ${st.notes}` : ""}
                           </p>
                         </div>
-                        <span className="font-bold text-[#10B981]">
+                        <span className="font-bold text-[#10B981] flex-shrink-0">
                           {formatSplitCurrency(st.amount, activeSession.currency)} ✓
                         </span>
                       </div>
@@ -856,6 +941,88 @@ export default function SplitterSessionDashboard() {
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 Download verified statement ledgers or dispatch directly to members via WhatsApp and Email
               </p>
+            </div>
+
+            {/* Date Range Scope Selector */}
+            <div className="p-4 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                    Audit Statement Scope
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    Filter records for PDF export, WhatsApp statement, and email dispatch
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-[#10B981] px-2.5 py-1 rounded-full bg-[#10B981]/10 self-start sm:self-auto">
+                  {exportFilteredExpenses.length} of {activeSession.expenses.length} records · {formatSplitCurrency(exportFilteredSpend, activeSession.currency)}
+                </span>
+              </div>
+
+              {/* Scope Pills */}
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setExportFilterMode("whole")}
+                  className={`py-2 px-3 rounded-lg transition-all text-center ${
+                    exportFilterMode === "whole"
+                      ? "bg-[#6366F1] text-white shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Whole History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportFilterMode("last_month")}
+                  className={`py-2 px-3 rounded-lg transition-all text-center ${
+                    exportFilterMode === "last_month"
+                      ? "bg-[#6366F1] text-white shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Last Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportFilterMode("custom")}
+                  className={`py-2 px-3 rounded-lg transition-all text-center ${
+                    exportFilterMode === "custom"
+                      ? "bg-[#6366F1] text-white shadow-sm"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Custom Range
+                </button>
+              </div>
+
+              {/* Custom Date Pickers */}
+              {exportFilterMode === "custom" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[var(--text-secondary)] mb-1">
+                      From Date (Start)
+                    </label>
+                    <input
+                      type="date"
+                      value={exportStartDate}
+                      onChange={(e) => setExportStartDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[var(--text-secondary)] mb-1">
+                      To Date (End)
+                    </label>
+                    <input
+                      type="date"
+                      value={exportEndDate}
+                      onChange={(e) => setExportEndDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1033,6 +1200,29 @@ export default function SplitterSessionDashboard() {
         currentUserEmail={user?.email}
         currentUserName={user?.name}
         onDispatched={(msg) => setEmailStatus(msg)}
+        initialFilterMode={exportFilterMode}
+        initialStartDate={exportStartDate}
+        initialEndDate={exportEndDate}
+      />
+
+      <EditSessionModal
+        open={showEditSessionModal}
+        onClose={() => setShowEditSessionModal(false)}
+        session={activeSession}
+        onSave={async (updates) => {
+          await updateSession(
+            activeSession.sessionId,
+            updates,
+            currentMember?.name || user?.name || "Organizer"
+          );
+        }}
+      />
+
+      <DeleteSessionModal
+        open={showDeleteSessionModal}
+        onClose={() => setShowDeleteSessionModal(false)}
+        session={activeSession}
+        onConfirmDelete={handleConfirmDeleteSession}
       />
 
       {/* Receipt Image Preview Modal */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -23,6 +23,9 @@ interface SendEmailReportModalProps {
   currentUserEmail?: string;
   currentUserName?: string;
   onDispatched?: (message: string) => void;
+  initialFilterMode?: 'whole' | 'last_month' | 'custom';
+  initialStartDate?: string;
+  initialEndDate?: string;
 }
 
 export function SendEmailReportModal({
@@ -32,7 +35,13 @@ export function SendEmailReportModal({
   currentUserEmail,
   currentUserName,
   onDispatched,
+  initialFilterMode = 'whole',
+  initialStartDate = '',
+  initialEndDate = '',
 }: SendEmailReportModalProps) {
+  const [filterMode, setFilterMode] = useState<'whole' | 'last_month' | 'custom'>(initialFilterMode);
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [endDate, setEndDate] = useState(initialEndDate);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [personalNote, setPersonalNote] = useState("");
@@ -41,6 +50,14 @@ export function SendEmailReportModal({
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setFilterMode(initialFilterMode);
+      setStartDate(initialStartDate);
+      setEndDate(initialEndDate);
+    }
+  }, [open, initialFilterMode, initialStartDate, initialEndDate]);
 
   // Initialize recipients when modal opens or session changes
   useEffect(() => {
@@ -145,6 +162,16 @@ export function SendEmailReportModal({
     setSending(true);
     setStatusMessage(null);
 
+    let dateRangeLabel: string | undefined = undefined;
+    if (filterMode === 'last_month') {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+      dateRangeLabel = `Last Month (${firstDay} to ${lastDay})`;
+    } else if (filterMode === 'custom') {
+      dateRangeLabel = `Custom Range (${startDate || 'Start'} to ${endDate || 'Now'})`;
+    }
+
     try {
       const res = await fetch(
         `/api/splitter/sessions/${encodeURIComponent(session.sessionId)}/email-report`,
@@ -154,6 +181,10 @@ export function SendEmailReportModal({
           body: JSON.stringify({
             recipients: currentRecipients,
             note: personalNote.trim() || undefined,
+            filterMode,
+            startDate: filterMode === "custom" && startDate ? startDate : undefined,
+            endDate: filterMode === "custom" && endDate ? endDate : undefined,
+            dateRangeLabel,
           }),
         }
       );
@@ -202,7 +233,28 @@ export function SendEmailReportModal({
     return null;
   };
 
-  const totalSpend = session.expenses.reduce((s, e) => s + e.amount, 0);
+  const scopedExpenses = useMemo(() => {
+    if (filterMode === 'last_month') {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+      return session.expenses.filter((e) => {
+        const d = e.date ? e.date.split('T')[0] : '';
+        return d >= firstDay && d <= lastDay;
+      });
+    }
+    if (filterMode === 'custom' && (startDate || endDate)) {
+      return session.expenses.filter((e) => {
+        const d = e.date ? e.date.split('T')[0] : '';
+        if (startDate && d < startDate) return false;
+        if (endDate && d > endDate) return false;
+        return true;
+      });
+    }
+    return session.expenses;
+  }, [session.expenses, filterMode, startDate, endDate]);
+
+  const scopedSpend = scopedExpenses.reduce((s, e) => s + e.amount, 0);
 
   // Unselected member emails that can be quick-added
   const availableMemberShortcuts = session.members.filter(
@@ -255,18 +307,88 @@ export function SendEmailReportModal({
               </div>
             </div>
 
+            {/* Date Scope Filter Tabs */}
+            <div className="space-y-2 mb-3">
+              <label className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                Select Report Scope
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('whole')}
+                  className={`py-1.5 px-2 rounded-lg transition-all text-center ${
+                    filterMode === 'whole'
+                      ? 'bg-[#6366F1] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Whole History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('last_month')}
+                  className={`py-1.5 px-2 rounded-lg transition-all text-center ${
+                    filterMode === 'last_month'
+                      ? 'bg-[#6366F1] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Last Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('custom')}
+                  className={`py-1.5 px-2 rounded-lg transition-all text-center ${
+                    filterMode === 'custom'
+                      ? 'bg-[#6366F1] text-white shadow-sm'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  Custom Range
+                </button>
+              </div>
+
+              {/* Custom Date Pickers */}
+              {filterMode === 'custom' && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[var(--text-secondary)] mb-1">
+                      From Date
+                    </label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[var(--text-secondary)] mb-1">
+                      To Date
+                    </label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Statement Summary Card */}
             <div className="p-3.5 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl mb-4 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-[var(--text-secondary)]">Total Group Spend:</span>
+                <span className="text-[var(--text-secondary)]">Scope Spend:</span>
                 <span className="font-extrabold text-[#10B981]">
-                  {formatSplitCurrency(totalSpend, session.currency)}
+                  {formatSplitCurrency(scopedSpend, session.currency)}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-[var(--text-secondary)]">Itemized Expenses:</span>
+                <span className="text-[var(--text-secondary)]">Scoped Expenses:</span>
                 <span className="font-bold text-[var(--text-primary)]">
-                  {session.expenses.length} logged
+                  {scopedExpenses.length} of {session.expenses.length} included
                 </span>
               </div>
               <div className="pt-2 border-t border-[var(--border-color)] flex items-center justify-between">
@@ -275,7 +397,7 @@ export function SendEmailReportModal({
                   <span>CapFlow_Split_{session.sessionId}.pdf</span>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#6366F1]/10 text-[#6366F1]">
-                  Tamper-evident
+                  {filterMode === 'whole' ? 'All-Time' : filterMode === 'last_month' ? 'Last Month' : 'Custom'}
                 </span>
               </div>
             </div>

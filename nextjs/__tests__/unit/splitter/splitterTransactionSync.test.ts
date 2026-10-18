@@ -32,14 +32,16 @@ jest.mock("@/lib/db", () => ({
         equals: jest.fn(() => ({
           filter: jest.fn((filterFn: (tx: any) => boolean) => ({
             first: jest.fn(async () => {
-              for (const tx of mockTransactions.values()) {
+              const all = Array.from(mockTransactions.values());
+              for (const tx of all) {
                 if (filterFn(tx)) return tx;
               }
               return null;
             }),
             toArray: jest.fn(async () => {
               const res: any[] = [];
-              for (const tx of mockTransactions.values()) {
+              const all = Array.from(mockTransactions.values());
+              for (const tx of all) {
                 if (filterFn(tx)) res.push(tx);
               }
               return res;
@@ -104,10 +106,12 @@ describe("Splitter to CapFlow Transaction Synchronization", () => {
     status: "active",
     startDate: "2026-10-18",
     endDate: "2026-10-22",
+    createdAt: "2026-10-18T00:00:00.000Z",
+    updatedAt: "2026-10-18T00:00:00.000Z",
     members: [
-      { id: "mem_1", name: "Alice", userId: "user-1", color: "#6366F1", isDependent: false },
-      { id: "mem_2", name: "Bob", userId: "user-2", color: "#10B981", isDependent: false },
-      { id: "mem_3", name: "Charlie", color: "#F59E0B", isDependent: false },
+      { id: "mem_1", name: "Alice", handle: "@alice", userId: "user-1", color: "#6366F1", isDependent: false },
+      { id: "mem_2", name: "Bob", handle: "@bob", userId: "user-2", color: "#10B981", isDependent: false },
+      { id: "mem_3", name: "Charlie", handle: "@charlie", color: "#F59E0B", isDependent: false },
     ],
     expenses: [],
     settlements: [],

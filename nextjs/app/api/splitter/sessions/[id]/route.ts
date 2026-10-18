@@ -54,6 +54,8 @@ export async function PUT(
 
     if (body.name !== undefined) session.name = body.name;
     if (body.description !== undefined) session.description = body.description;
+    if (body.template !== undefined) session.template = body.template;
+    if (body.currency !== undefined) session.currency = body.currency;
     if (body.budgetCap !== undefined) session.budgetCap = body.budgetCap;
     if (body.startDate !== undefined) session.startDate = body.startDate;
     if (body.endDate !== undefined) session.endDate = body.endDate;

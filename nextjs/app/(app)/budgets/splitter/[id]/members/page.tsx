@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   UserPlus,
@@ -16,6 +16,9 @@ import {
   HandCoins,
   Shield,
   Trash2,
+  Edit2,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { useSplitterStore } from "@/lib/store/splitterStore";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -24,9 +27,10 @@ import {
   formatSplitCurrency,
 } from "@/lib/splitter/debtEngine";
 import { AddMemberModal } from "@/components/splitter/AddMemberModal";
+import { EditMemberModal } from "@/components/splitter/EditMemberModal";
 import { LiveToasts } from "@/components/splitter/LiveToasts";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
-import { SplitMember } from "@/types/splitter";
+import { SplitMember, MemberNetPosition } from "@/types/splitter";
 
 export default function SplitterMembersPage() {
   const params = useParams();
@@ -44,6 +48,10 @@ export default function SplitterMembersPage() {
   } = useSplitterStore();
 
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [editingMember, setEditingMember] = useState<SplitMember | null>(null);
+  const [memberToDelete, setMemberToDelete] = useState<SplitMember | null>(null);
+  const [dueWarning, setDueWarning] = useState<{ title: string; message: string } | null>(null);
+  const [deletingMember, setDeletingMember] = useState(false);
 
   useEffect(() => {
     if (sessionId && (!activeSession || activeSession.sessionId !== sessionId)) {
@@ -64,6 +72,67 @@ export default function SplitterMembersPage() {
     }
     return activeSession.members[0];
   }, [activeSession, user]);
+
+  const handleRequestDeleteMember = (pos: MemberNetPosition, memberObj?: SplitMember) => {
+    if (!memberObj || !activeSession) return;
+
+    if (activeSession.members.length <= 1) {
+      setDueWarning({
+        title: "Cannot Delete Sole Member",
+        message: "A session must contain at least one member. You cannot remove the only remaining participant.",
+      });
+      return;
+    }
+
+    const hasPendingDue = Math.abs(pos.netBalance) > 0.009;
+    if (hasPendingDue) {
+      const isGetsBack = pos.netBalance > 0.009;
+      const amountStr = formatSplitCurrency(Math.abs(pos.netBalance), activeSession.currency);
+      setDueWarning({
+        title: "Cannot Delete Member: Outstanding Dues Pending",
+        message: isGetsBack
+          ? `${pos.memberName} has an unsettled balance and is owed ${amountStr} by the group. To preserve ledger financial integrity, they cannot be deleted until all settlements are received and their balance is ₹0.`
+          : `${pos.memberName} has an unsettled balance and owes ${amountStr} to the group. To preserve ledger financial integrity, they cannot be deleted until their pending dues are fully settled.`,
+      });
+      return;
+    }
+
+    // Completely settled!
+    setMemberToDelete(memberObj);
+  };
+
+  const handleConfirmDeleteMember = async () => {
+    if (!memberToDelete || !activeSession) return;
+    setDeletingMember(true);
+    try {
+      const updatedMembers = activeSession.members.filter((m) => m.id !== memberToDelete.id);
+      await updateSession(
+        activeSession.sessionId,
+        { members: updatedMembers },
+        currentMember?.name || user?.name || "Member"
+      );
+      setMemberToDelete(null);
+    } catch (err: any) {
+      setDueWarning({
+        title: "Deletion Failed",
+        message: err?.message || "Failed to remove member. Please try again.",
+      });
+    } finally {
+      setDeletingMember(false);
+    }
+  };
+
+  const handleSaveMember = async (updatedMember: SplitMember) => {
+    if (!activeSession) return;
+    const updatedMembers = activeSession.members.map((m) =>
+      m.id === updatedMember.id ? updatedMember : m
+    );
+    await updateSession(
+      activeSession.sessionId,
+      { members: updatedMembers },
+      currentMember?.name || user?.name || "Member"
+    );
+  };
 
   if (loading && !activeSession) {
     return (
@@ -266,6 +335,36 @@ export default function SplitterMembersPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Member Management Actions */}
+                <div className="pt-2 border-t border-[var(--border-color)] flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingMember(memberObj || null)}
+                    className="flex-1 py-1.5 px-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[11px] font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Edit2 size={12} className="text-[#6366F1]" />
+                    <span>Edit Person</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRequestDeleteMember(pos, memberObj)}
+                    className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      isSettled
+                        ? "bg-[#EF4444]/10 border-[#EF4444]/30 text-[#EF4444] hover:bg-[#EF4444] hover:text-white shadow-sm"
+                        : "bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[#EF4444]/40"
+                    }`}
+                    title={
+                      isSettled
+                        ? "Delete person from session"
+                        : `Cannot delete: Pending due ${formatSplitCurrency(pos.netBalance, activeSession.currency)}`
+                    }
+                  >
+                    <Trash2 size={12} className={isSettled ? "" : "opacity-60"} />
+                    <span>{isSettled ? "Delete Person" : "Dues Pending"}</span>
+                  </button>
+                </div>
               </motion.div>
             );
           })}
@@ -300,6 +399,146 @@ export default function SplitterMembersPage() {
           );
         }}
       />
+
+      {/* Edit Member Modal */}
+      <EditMemberModal
+        open={!!editingMember}
+        onClose={() => setEditingMember(null)}
+        member={editingMember}
+        allMembers={activeSession.members}
+        isFamilyTemplate={activeSession.template === "family"}
+        onSave={handleSaveMember}
+      />
+
+      {/* Outstanding Due Warning Alert Modal */}
+      <AnimatePresence>
+        {dueWarning && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDueWarning(null)}
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-[420px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl z-10 text-center"
+            >
+              <button
+                onClick={() => setDueWarning(null)}
+                className="absolute top-4 right-4 p-2 rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] transition-colors"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="w-14 h-14 rounded-3xl bg-[#EF4444]/15 text-[#EF4444] flex items-center justify-center mx-auto mb-3.5 shadow-sm">
+                <AlertTriangle size={28} />
+              </div>
+
+              <h3 className="text-base font-bold text-[var(--text-primary)]">
+                {dueWarning.title}
+              </h3>
+
+              <div className="p-3 bg-[var(--bg-primary)] border border-[#EF4444]/20 rounded-2xl my-4 text-left text-xs space-y-2">
+                <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                  {dueWarning.message}
+                </p>
+                <p className="text-[11px] font-bold text-[#6366F1]">
+                  👉 Tip: Settle this member&apos;s pending balance under the &ldquo;Settle Balances&rdquo; roadmap first to reach ₹0 net due. Once settled, they can be safely removed.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDueWarning(null)}
+                  className="w-full py-2.5 rounded-xl bg-[#6366F1] text-white text-xs font-bold hover:bg-[#4F46E5] transition-all shadow-md shadow-[#6366F1]/20"
+                >
+                  Understood
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Member Confirmation Modal */}
+      <AnimatePresence>
+        {memberToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setMemberToDelete(null)}
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-[420px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl z-10 text-center"
+            >
+              <button
+                onClick={() => setMemberToDelete(null)}
+                disabled={deletingMember}
+                className="absolute top-4 right-4 p-2 rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] transition-colors disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="w-14 h-14 rounded-3xl bg-[#EF4444]/15 text-[#EF4444] flex items-center justify-center mx-auto mb-3.5 shadow-sm">
+                <Trash2 size={26} />
+              </div>
+
+              <h3 className="text-base font-bold text-[var(--text-primary)]">
+                Delete Member?
+              </h3>
+
+              <p className="text-xs text-[var(--text-secondary)] mt-1.5 leading-relaxed">
+                Are you sure you want to remove{" "}
+                <span className="font-bold text-[var(--text-primary)]">
+                  {memberToDelete.name}
+                </span>{" "}
+                ({memberToDelete.handle}) from this session?
+              </p>
+
+              <div className="p-3 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-2xl my-4 text-left text-xs space-y-1">
+                <p className="font-bold text-[#10B981] flex items-center gap-1.5">
+                  <Check size={13} />
+                  <span>Dues Verified: Zero Pending Balance</span>
+                </p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  All past transactions and settlements will remain preserved in historical audit ledgers.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMemberToDelete(null)}
+                  disabled={deletingMember}
+                  className="flex-1 py-2.5 rounded-xl border border-[var(--border-color)] text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteMember}
+                  disabled={deletingMember}
+                  className="flex-1 py-2.5 rounded-xl bg-[#EF4444] text-white text-xs font-bold hover:bg-[#DC2626] transition-all flex items-center justify-center gap-1.5 shadow-md shadow-[#EF4444]/20 disabled:opacity-50"
+                >
+                  <Trash2 size={14} />
+                  <span>{deletingMember ? "Deleting..." : "Confirm Delete"}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

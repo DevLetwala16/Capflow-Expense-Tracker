@@ -66,8 +66,16 @@ export async function POST(
       );
     }
 
-    // Generate PDF report
-    const pdfBytes = await generateSplitterReportPDF(session);
+    // Extract filter options if present
+    const filterOptions = {
+      filterMode: body.filterMode as ('whole' | 'last_month' | 'custom' | undefined),
+      startDate: body.startDate as (string | undefined),
+      endDate: body.endDate as (string | undefined),
+      dateRangeLabel: body.dateRangeLabel as (string | undefined),
+    };
+
+    // Generate PDF report with date filtering
+    const pdfBytes = await generateSplitterReportPDF(session, filterOptions);
     const pdfBuffer = Buffer.from(pdfBytes);
 
     const smtpPort = parseInt(process.env.SMTP_PORT || '465');
@@ -86,12 +94,32 @@ export async function POST(
       },
     });
 
-    const totalSpend = session.expenses.reduce((s, e) => s + e.amount, 0);
+    const scopeLabel = body.dateRangeLabel || (body.filterMode === 'last_month' ? 'Last Month' : 'All Time / Whole Transactions');
+
+    // Calculate spend for the scope
+    let filteredExps = session.expenses;
+    if (body.filterMode === 'last_month') {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+      filteredExps = session.expenses.filter(e => {
+        const d = e.date ? e.date.split('T')[0] : '';
+        return d >= firstDay && d <= lastDay;
+      });
+    } else if (body.filterMode === 'custom' && (body.startDate || body.endDate)) {
+      filteredExps = session.expenses.filter(e => {
+        const d = e.date ? e.date.split('T')[0] : '';
+        if (body.startDate && d < body.startDate) return false;
+        if (body.endDate && d > body.endDate) return false;
+        return true;
+      });
+    }
+    const filteredSpend = filteredExps.reduce((s, e) => s + e.amount, 0);
 
     const mailOptions = {
       from: `"CapFlow Splitter" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@capflow.app'}>`,
       to: targetEmails.join(', '),
-      subject: `CapFlow Expense & Split Audit Report: ${session.name} (${session.sessionId})`,
+      subject: `CapFlow Expense & Split Audit Report: ${session.name} [${scopeLabel}]`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #f8fafc; padding: 32px 16px;">
           <div style="max-width: 580px; margin: 0 auto; background-color: #131b2e; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden;">
@@ -123,12 +151,12 @@ export async function POST(
                     <td style="color: #6366F1; font-weight: bold; text-align: right; padding: 6px 0;">${session.sessionId}</td>
                   </tr>
                   <tr>
-                    <td style="color: #64748b; padding: 6px 0;">Date Range:</td>
-                    <td style="color: #f8fafc; text-align: right; padding: 6px 0;">${session.startDate} to ${session.endDate}</td>
+                    <td style="color: #64748b; padding: 6px 0;">Report Scope:</td>
+                    <td style="color: #f8fafc; font-weight: bold; text-align: right; padding: 6px 0;">${scopeLabel}</td>
                   </tr>
                   <tr>
-                    <td style="color: #64748b; padding: 6px 0;">Total Group Spend:</td>
-                    <td style="color: #10B981; font-weight: bold; text-align: right; padding: 6px 0;">${session.currency} ${totalSpend.toLocaleString()}</td>
+                    <td style="color: #64748b; padding: 6px 0;">Scoped Spend:</td>
+                    <td style="color: #10B981; font-weight: bold; text-align: right; padding: 6px 0;">${session.currency} ${filteredSpend.toLocaleString()} (${filteredExps.length} expenses)</td>
                   </tr>
                   <tr>
                     <td style="color: #64748b; padding: 6px 0;">Participants:</td>

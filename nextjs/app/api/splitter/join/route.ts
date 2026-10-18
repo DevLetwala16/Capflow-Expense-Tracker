@@ -31,57 +31,66 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    // Check if member already present
-    const existingIdx = session.members.findIndex(
-      (m) =>
-        (member.userId && m.userId === member.userId) ||
-        (member.handle && m.handle.toLowerCase() === member.handle.toLowerCase()) ||
-        (m.id === member.id)
-    );
+    
+    // Check if member is already present in this session
+    const memberNameClean = (member.name || '').trim().toLowerCase();
+    const memberHandleClean = (member.handle || '').trim().toLowerCase();
+    const memberPhoneClean = (member.phone || '').trim();
+    const memberEmailClean = (member.email || '').trim().toLowerCase();
 
-    let joinedMember: SplitMember;
+    const existingMember = session.members.find((m: SplitMember) => {
+      const matchUserId = member.userId && m.userId && m.userId === member.userId;
+      const matchName = memberNameClean && m.name.trim().toLowerCase() === memberNameClean;
+      const matchHandle = memberHandleClean && m.handle.trim().toLowerCase() === memberHandleClean;
+      const matchPhone = memberPhoneClean && m.phone && m.phone.trim() === memberPhoneClean;
+      const matchEmail = memberEmailClean && m.email && m.email.trim().toLowerCase() === memberEmailClean;
+      const matchId = member.id && m.id === member.id;
+      return matchUserId || matchName || matchHandle || matchPhone || matchEmail || matchId;
+    });
 
-    if (existingIdx >= 0) {
-      // Update existing member record
-      joinedMember = {
-        ...session.members[existingIdx],
-        ...member,
-      };
-      session.members[existingIdx] = joinedMember;
-    } else {
-      // Add new member
-      const memberColors = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#0EA5E9', '#F97316'];
-      const assignedColor =
-        member.color || memberColors[session.members.length % memberColors.length];
-
-      joinedMember = {
-        id: member.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        name: member.name.trim(),
-        phone: member.phone?.trim(),
-        email: member.email?.trim(),
-        handle:
-          member.handle ||
-          `@${member.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'member'}`,
-        color: assignedColor,
-        avatar: member.avatar,
-        isDependent: !!member.isDependent,
-        primaryPayerMemberId: member.primaryPayerMemberId,
-        userId: member.userId,
-      };
-
-      session.members.push(joinedMember);
-
-      // Audit log
-      const auditLog: SplitAuditLog = {
-        id: `log_${Date.now()}_join`,
-        sessionId: session.sessionId,
-        timestamp: now,
-        memberId: joinedMember.id,
-        memberName: joinedMember.name,
-        action: `${joinedMember.name} (${joinedMember.handle}) joined the session via Session ID / QR Code`,
-      };
-      session.auditLogs.unshift(auditLog);
+    if (existingMember) {
+      return NextResponse.json(
+        {
+          error: `Member "${existingMember.name}" (${existingMember.handle}) has already joined this session. You cannot join the same session multiple times.`,
+          alreadyJoined: true,
+          existingMember,
+          sessionId: cleanSessionId,
+        },
+        { status: 409 }
+      );
     }
+    // Add new member
+    const memberColors = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#0EA5E9', '#F97316'];
+    const assignedColor =
+      member.color || memberColors[session.members.length % memberColors.length];
+
+    const joinedMember: SplitMember = {
+      id: member.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: member.name.trim(),
+      phone: member.phone?.trim(),
+      email: member.email?.trim(),
+      handle:
+        member.handle ||
+        `@${member.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'member'}`,
+      color: assignedColor,
+      avatar: member.avatar,
+      isDependent: !!member.isDependent,
+      primaryPayerMemberId: member.primaryPayerMemberId,
+      userId: member.userId,
+    };
+
+    session.members.push(joinedMember);
+
+    // Audit log
+    const auditLog: SplitAuditLog = {
+      id: `log_${Date.now()}_join`,
+      sessionId: session.sessionId,
+      timestamp: now,
+      memberId: joinedMember.id,
+      memberName: joinedMember.name,
+      action: `${joinedMember.name} (${joinedMember.handle}) joined the session via Session ID / QR Code`,
+    };
+    session.auditLogs.unshift(auditLog);
 
     await session.save();
 

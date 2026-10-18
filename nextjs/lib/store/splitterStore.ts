@@ -706,7 +706,11 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error || 'Failed to join session');
+      const customErr: any = new Error(err.error || 'Failed to join session');
+      customErr.status = res.status;
+      customErr.alreadyJoined = err.alreadyJoined;
+      customErr.sessionId = err.sessionId || sessionId;
+      throw customErr;
     }
 
     const data = await res.json();

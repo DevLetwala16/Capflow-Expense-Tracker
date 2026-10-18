@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 const TransactionSchema = z.object({
   type: z.enum(['expense', 'income']),
-  amount: z.number({ invalid_type_error: 'Amount must be a number' }).positive('Amount must be greater than 0'),
+  amount: z.number({ message: 'Amount must be a number' }).positive('Amount must be greater than 0'),
   currency: z.string().min(3, 'Currency code required'),
   categoryId: z.number().int().positive('Category is required'),
   title: z.string().min(1, 'Title is required').max(100, 'Title too long'),

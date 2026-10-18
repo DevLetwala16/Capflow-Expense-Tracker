@@ -11,7 +11,62 @@ import {
   formatPDFCurrency,
 } from './debtEngine';
 
-export async function generateSplitterReportPDF(session: SplitSession): Promise<Uint8Array> {
+export interface SplitterReportFilterOptions {
+  startDate?: string;
+  endDate?: string;
+  filterMode?: 'whole' | 'last_month' | 'custom';
+  dateRangeLabel?: string;
+}
+
+export function filterSessionExpenses(
+  session: SplitSession,
+  options?: SplitterReportFilterOptions
+): { filteredSession: SplitSession; effectiveLabel: string } {
+  if (!options || options.filterMode === 'whole' || (!options.filterMode && !options.startDate && !options.endDate)) {
+    return {
+      filteredSession: session,
+      effectiveLabel: 'Whole Transactions (All-Time)',
+    };
+  }
+
+  let startStr = options.startDate;
+  let endStr = options.endDate;
+  let label = options.dateRangeLabel;
+
+  if (options.filterMode === 'last_month') {
+    const now = new Date();
+    const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    startStr = firstDayLastMonth.toISOString().split('T')[0];
+    endStr = lastDayLastMonth.toISOString().split('T')[0];
+    const monthName = firstDayLastMonth.toLocaleString('default', { month: 'short', year: 'numeric' });
+    label = `Last Month (${monthName}: ${startStr} to ${endStr})`;
+  } else if (!label) {
+    label = `Custom Range (${startStr || 'Start'} to ${endStr || 'Current'})`;
+  }
+
+  const filteredExpenses = session.expenses.filter((e) => {
+    const expDate = e.date ? e.date.split('T')[0] : '';
+    if (startStr && expDate < startStr) return false;
+    if (endStr && expDate > endStr) return false;
+    return true;
+  });
+
+  return {
+    filteredSession: {
+      ...session,
+      expenses: filteredExpenses,
+    },
+    effectiveLabel: label || 'Custom Range',
+  };
+}
+
+export async function generateSplitterReportPDF(
+  session: SplitSession,
+  options?: SplitterReportFilterOptions
+): Promise<Uint8Array> {
+  const { filteredSession, effectiveLabel } = filterSessionExpenses(session, options);
+
   const pdfDoc = await PDFDocument.create();
 
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -36,9 +91,9 @@ export async function generateSplitterReportPDF(session: SplitSession): Promise<
   const cGreen = rgb(0.06, 0.72, 0.51); // #10B981
   const cRed = rgb(0.93, 0.27, 0.27); // #EF4444
 
-  const positions: MemberNetPosition[] = calculateMemberNetPositions(session);
+  const positions: MemberNetPosition[] = calculateMemberNetPositions(filteredSession);
   const settlements: SettlementTransaction[] = simplifyDebts(positions);
-  const totalSpend = session.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalSpend = filteredSession.expenses.reduce((sum, e) => sum + e.amount, 0);
 
   function checkPageSpace(requiredHeight: number) {
     if (y - requiredHeight < 40) {
@@ -132,12 +187,12 @@ export async function generateSplitterReportPDF(session: SplitSession): Promise<
     font: fontRegular,
     color: cBrand,
   });
-  page.drawText(`Dates: ${session.startDate} to ${session.endDate}`, {
+  page.drawText(`Scope: ${effectiveLabel}`, {
     x: MARGIN_LEFT + 12,
     y: y - 56,
     size: 7.5,
-    font: fontRegular,
-    color: cMuted,
+    font: fontBold,
+    color: cBrand,
   });
 
   // Col 2: Financial Stats
@@ -346,7 +401,7 @@ export async function generateSplitterReportPDF(session: SplitSession): Promise<
 
   // ── 5. Itemized Multi-Day Expense Ledger ───────────────────────────────────
   checkPageSpace(100);
-  page.drawText('ITEMIZED MULTI-DAY EXPENSE LEDGER', {
+  page.drawText(`ITEMIZED EXPENSE LEDGER (${filteredSession.expenses.length} Records · ${effectiveLabel})`, {
     x: MARGIN_LEFT,
     y,
     size: 9.5,
@@ -380,7 +435,7 @@ export async function generateSplitterReportPDF(session: SplitSession): Promise<
 
   const memberNameMap = new Map(session.members.map((m) => [m.id, m.name]));
 
-  session.expenses.forEach((exp) => {
+  filteredSession.expenses.forEach((exp) => {
     checkPageSpace(26);
     page.drawLine({
       start: { x: MARGIN_LEFT, y },
@@ -473,14 +528,19 @@ export function downloadSplitterPDF(pdfBytes: Uint8Array, fileName: string) {
 /**
  * Generate formatted text summary for instant WhatsApp / messaging sharing.
  */
-export function generateWhatsAppSummary(session: SplitSession): string {
-  const positions = calculateMemberNetPositions(session);
+export function generateWhatsAppSummary(
+  session: SplitSession,
+  options?: SplitterReportFilterOptions
+): string {
+  const { filteredSession, effectiveLabel } = filterSessionExpenses(session, options);
+  const positions = calculateMemberNetPositions(filteredSession);
   const settlements = simplifyDebts(positions);
-  const totalSpend = session.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalSpend = filteredSession.expenses.reduce((sum, e) => sum + e.amount, 0);
 
   let text = `*CapFlow Splitter Summary: ${session.name}*\n`;
   text += `Session ID: ${session.sessionId}\n`;
-  text += `Total Spent: ${formatSplitCurrency(totalSpend, session.currency)}\n`;
+  text += `Report Scope: ${effectiveLabel}\n`;
+  text += `Total Spent: ${formatSplitCurrency(totalSpend, session.currency)} (${filteredSession.expenses.length} expenses)\n`;
   text += `Status: ${session.status.toUpperCase()}\n\n`;
 
   text += `*--- Member Net Standing ---*\n`;
@@ -506,7 +566,15 @@ export function generateWhatsAppSummary(session: SplitSession): string {
   }
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  text += `\n📄 View / Download Verified PDF Statement:\n${origin}/api/splitter/sessions/${session.sessionId}/pdf\n`;
+  const queryParams = new URLSearchParams();
+  if (options?.filterMode && options.filterMode !== 'whole') {
+    queryParams.set('filterMode', options.filterMode);
+  }
+  if (options?.startDate) queryParams.set('startDate', options.startDate);
+  if (options?.endDate) queryParams.set('endDate', options.endDate);
+  const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+  text += `\n📄 View / Download Verified PDF Statement:\n${origin}/api/splitter/sessions/${session.sessionId}/pdf${qs}\n`;
   text += `\n🔗 Join or track live in CapFlow:\n${origin}/budgets/splitter?join=${session.sessionId}`;
   return text;
 }

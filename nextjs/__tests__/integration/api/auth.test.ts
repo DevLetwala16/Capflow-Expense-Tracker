@@ -63,7 +63,7 @@ jest.mock('jsonwebtoken', () => ({
 
 // Ensure JWT_SECRET is set for the route handlers
 process.env.JWT_SECRET = 'test-secret-for-jest';
-process.env.NODE_ENV   = 'test';
+(process.env as any).NODE_ENV = 'test';
 
 // ── Helper: build a NextRequest ────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ function makeRequest(
   url: string,
   options: { method?: string; body?: object; cookies?: Record<string, string> } = {}
 ): NextRequest {
-  const reqOptions: RequestInit = {
+  const reqOptions: any = {
     method: options.method ?? 'GET',
     headers: { 'Content-Type': 'application/json' },
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -82,7 +82,6 @@ function makeRequest(
   // Attach cookies if provided
   if (options.cookies) {
     Object.entries(options.cookies).forEach(([name, value]) => {
-      // @ts-expect-error — internal cookie map patching for test purposes
       req.cookies.set(name, value);
     });
   }

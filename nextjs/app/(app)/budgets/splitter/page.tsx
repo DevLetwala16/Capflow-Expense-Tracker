@@ -16,13 +16,18 @@ import {
   ChevronRight,
   Sparkles,
   WifiOff,
+  Edit2,
+  Trash2,
 } from "lucide-react";
 import { useSplitterStore } from "@/lib/store/splitterStore";
 import { useAuthStore } from "@/lib/store/authStore";
 import { CreateSessionModal } from "@/components/splitter/CreateSessionModal";
 import { JoinSessionModal } from "@/components/splitter/JoinSessionModal";
+import { EditSessionModal } from "@/components/splitter/EditSessionModal";
+import { DeleteSessionModal } from "@/components/splitter/DeleteSessionModal";
 import { formatSplitCurrency } from "@/lib/splitter/debtEngine";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
+import { SplitSession } from "@/types/splitter";
 
 export default function SplitterSessionsHub() {
   const router = useRouter();
@@ -37,11 +42,15 @@ export default function SplitterSessionsHub() {
     loadSessions,
     createSession,
     joinSession,
+    updateSession,
+    deleteSession,
   } = useSplitterStore();
 
   const [activeTab, setActiveTab] = useState<"all" | "active" | "settled">("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(!!joinParam);
+  const [editingSession, setEditingSession] = useState<SplitSession | null>(null);
+  const [deletingSession, setDeletingSession] = useState<SplitSession | null>(null);
 
   useEffect(() => {
     if (user?.id) {
@@ -279,9 +288,33 @@ export default function SplitterSessionsHub() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1 text-xs font-bold text-[#6366F1]">
-                      <span>Open Ledger</span>
-                      <ChevronRight size={14} />
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingSession(session);
+                        }}
+                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[#6366F1] hover:bg-[var(--bg-primary)] transition-all"
+                        title="Edit Session Details"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingSession(session);
+                        }}
+                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[#EF4444] hover:bg-[var(--bg-primary)] transition-all"
+                        title="Delete Session"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <div className="flex items-center gap-1 text-xs font-bold text-[#6366F1] pl-1">
+                        <span>Open</span>
+                        <ChevronRight size={14} />
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -316,6 +349,32 @@ export default function SplitterSessionsHub() {
           router.push(`/budgets/splitter/${joined.sessionId}`);
         }}
       />
+
+      {editingSession && (
+        <EditSessionModal
+          open={!!editingSession}
+          onClose={() => setEditingSession(null)}
+          session={editingSession}
+          onSave={async (updates) => {
+            await updateSession(
+              editingSession.sessionId,
+              updates,
+              user?.name || "Organizer"
+            );
+          }}
+        />
+      )}
+
+      {deletingSession && (
+        <DeleteSessionModal
+          open={!!deletingSession}
+          onClose={() => setDeletingSession(null)}
+          session={deletingSession}
+          onConfirmDelete={async () => {
+            await deleteSession(deletingSession.sessionId);
+          }}
+        />
+      )}
     </div>
   );
 }
