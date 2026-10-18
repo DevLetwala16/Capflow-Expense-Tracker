@@ -10,6 +10,7 @@ import {
   Palette,
   Sparkles,
   HeartHandshake,
+  Users,
 } from "lucide-react";
 import { SplitMember } from "@/types/splitter";
 
@@ -47,6 +48,7 @@ export function EditMemberModal({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [color, setColor] = useState(MEMBER_COLORS[0]);
+  const [familyCount, setFamilyCount] = useState<number>(1);
   const [isDependent, setIsDependent] = useState(false);
   const [primaryPayerId, setPrimaryPayerId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +61,7 @@ export function EditMemberModal({
       setPhone(member.phone || "");
       setEmail(member.email || "");
       setColor(member.color || MEMBER_COLORS[0]);
+      setFamilyCount(member.familyCount && member.familyCount > 0 ? member.familyCount : 1);
       setIsDependent(!!member.isDependent);
       setPrimaryPayerId(member.primaryPayerMemberId || "");
       setError("");
@@ -91,6 +94,7 @@ export function EditMemberModal({
         phone: phone.trim() || undefined,
         email: email.trim().toLowerCase() || undefined,
         color,
+        familyCount: familyCount > 0 ? familyCount : 1,
         isDependent,
         primaryPayerMemberId: isDependent ? (primaryPayerId || otherMembers[0]?.id) : undefined,
       });
@@ -239,6 +243,46 @@ export function EditMemberModal({
                       style={{ backgroundColor: c }}
                     />
                   ))}
+                </div>
+              </div>
+
+              {/* Family Headcount / Size */}
+              <div className="p-3 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)] space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                    <Users size={13} className="text-[#6366F1]" />
+                    <span>Family Headcount (Persons)</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-[#6366F1] px-2 py-0.5 rounded-full bg-[#6366F1]/10">
+                    {familyCount === 1 ? "1 Person (Self)" : `👨‍👩‍👧 ${familyCount} Persons`}
+                  </span>
+                </div>
+                <p className="text-[10px] text-[var(--text-secondary)]">
+                  Total people represented by this family member. Expenses in equal mode are automatically split by this headcount.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setFamilyCount(Math.max(1, familyCount - 1))}
+                    className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={familyCount}
+                    onChange={(e) => setFamilyCount(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="flex-1 text-center py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFamilyCount(Math.min(20, familyCount + 1))}
+                    className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
 

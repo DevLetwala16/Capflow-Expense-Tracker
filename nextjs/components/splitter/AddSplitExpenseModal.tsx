@@ -24,6 +24,7 @@ import {
 import {
   roundTo2Decimals,
   calculateEqualSplits,
+  autoBalanceExactShares,
   formatSplitCurrency,
   toCents,
   fromCents,
@@ -81,9 +82,30 @@ export function AddSplitExpenseModal({
     members.map((m) => m.id)
   );
   const [exactShares, setExactShares] = useState<Record<string, string>>({});
+  const [customizedMemberIds, setCustomizedMemberIds] = useState<Set<string>>(new Set());
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  // Map of member family headcount weights (default 1)
+  const memberWeights = useMemo(() => {
+    const weights: Record<string, number> = {};
+    members.forEach((m) => {
+      weights[m.id] = m.familyCount && m.familyCount > 1 ? m.familyCount : 1;
+    });
+    return weights;
+  }, [members]);
+
+  // Helper: compute equal/weighted shares map
+  const computeEqualSharesMap = (total: number, participants: string[]) => {
+    if (total <= 0 || participants.length === 0) return {};
+    const splits = calculateEqualSplits(total, participants, memberWeights);
+    const map: Record<string, string> = {};
+    splits.forEach((s) => {
+      map[s.memberId] = s.amount.toFixed(2);
+    });
+    return map;
+  };
 
   // Load existing expense if editing
   useEffect(() => {
@@ -117,10 +139,16 @@ export function AddSplitExpenseModal({
 
       if (existingExpense.splitMode === "exact") {
         const shareMap: Record<string, string> = {};
+        const customized = new Set<string>();
         existingExpense.splits.forEach((s) => {
           shareMap[s.memberId] = s.amount.toString();
+          customized.add(s.memberId);
         });
         setExactShares(shareMap);
+        setCustomizedMemberIds(customized);
+      } else {
+        setExactShares({});
+        setCustomizedMemberIds(new Set());
       }
     } else {
       // Reset
@@ -136,6 +164,7 @@ export function AddSplitExpenseModal({
       setSplitMode("equal");
       setSelectedParticipants(members.map((m) => m.id));
       setExactShares({});
+      setCustomizedMemberIds(new Set());
       setError("");
     }
   }, [existingExpense, open, members, currentMember]);
@@ -145,8 +174,8 @@ export function AddSplitExpenseModal({
   // Compute equal splits preview
   const equalSplitsPreview = useMemo(() => {
     if (parsedTotal <= 0 || selectedParticipants.length === 0) return [];
-    return calculateEqualSplits(parsedTotal, selectedParticipants);
-  }, [parsedTotal, selectedParticipants]);
+    return calculateEqualSplits(parsedTotal, selectedParticipants, memberWeights);
+  }, [parsedTotal, selectedParticipants, memberWeights]);
 
   // Compute multi-payer sum & remaining
   const multiPayerSum = useMemo(() => {
@@ -171,6 +200,76 @@ export function AddSplitExpenseModal({
   }, [exactShares]);
 
   const exactSplitDiff = roundTo2Decimals(parsedTotal - exactSplitSum);
+
+  // Handle total amount change
+  const handleAmountChange = (newValStr: string) => {
+    setAmount(newValStr);
+    const newTotal = parseFloat(newValStr) || 0;
+    if (splitMode === "exact" && newTotal > 0) {
+      if (customizedMemberIds.size === 0) {
+        setExactShares(computeEqualSharesMap(newTotal, selectedParticipants));
+      } else {
+        const uncustomized = selectedParticipants.filter((id) => !customizedMemberIds.has(id));
+        if (uncustomized.length > 0) {
+          let lockedCents = 0;
+          for (const id of Array.from(customizedMemberIds)) {
+            lockedCents += toCents(parseFloat(exactShares[id] || "0") || 0);
+          }
+          const remCents = toCents(newTotal) - lockedCents;
+          if (remCents > 0) {
+            const splits = calculateEqualSplits(fromCents(remCents), uncustomized, memberWeights);
+            const next = { ...exactShares };
+            splits.forEach((s) => {
+              next[s.memberId] = s.amount.toFixed(2);
+            });
+            setExactShares(next);
+          }
+        }
+      }
+    }
+  };
+
+  // Switch split mode
+  const handleSetSplitMode = (mode: SplitMode) => {
+    setSplitMode(mode);
+    if (mode === "exact" && parsedTotal > 0) {
+      const currentSum = Object.values(exactShares).reduce(
+        (acc, v) => acc + (parseFloat(v) || 0),
+        0
+      );
+      if (currentSum === 0 || Math.abs(currentSum - parsedTotal) > 0.009) {
+        setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants));
+        setCustomizedMemberIds(new Set());
+      }
+    }
+  };
+
+  // Reset exact shares to equal/headcount split
+  const handleResetToEqual = () => {
+    if (parsedTotal > 0) {
+      setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants));
+      setCustomizedMemberIds(new Set());
+    }
+  };
+
+  // Handle single exact share input change with auto-balance across other participants
+  const handleExactShareChange = (memberId: string, valStr: string) => {
+    if (parsedTotal <= 0) {
+      setExactShares({ ...exactShares, [memberId]: valStr });
+      return;
+    }
+    const { updatedShares, updatedCustomizedIds } = autoBalanceExactShares(
+      parsedTotal,
+      selectedParticipants,
+      exactShares,
+      memberId,
+      valStr,
+      customizedMemberIds,
+      memberWeights
+    );
+    setExactShares(updatedShares);
+    setCustomizedMemberIds(updatedCustomizedIds);
+  };
 
   // Image compression helper
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -200,11 +299,18 @@ export function AddSplitExpenseModal({
   };
 
   const toggleParticipant = (memberId: string) => {
+    let nextParticipants: string[];
     if (selectedParticipants.includes(memberId)) {
       if (selectedParticipants.length <= 1) return; // Keep at least one
-      setSelectedParticipants(selectedParticipants.filter((id) => id !== memberId));
+      nextParticipants = selectedParticipants.filter((id) => id !== memberId);
     } else {
-      setSelectedParticipants([...selectedParticipants, memberId]);
+      nextParticipants = [...selectedParticipants, memberId];
+    }
+    setSelectedParticipants(nextParticipants);
+
+    if (splitMode === "exact" && parsedTotal > 0) {
+      setExactShares(computeEqualSharesMap(parsedTotal, nextParticipants));
+      setCustomizedMemberIds(new Set());
     }
   };
 
@@ -248,7 +354,7 @@ export function AddSplitExpenseModal({
     // Build splits array
     let finalSplits: SplitShareEntry[] = [];
     if (splitMode === "equal") {
-      finalSplits = calculateEqualSplits(parsedTotal, selectedParticipants);
+      finalSplits = calculateEqualSplits(parsedTotal, selectedParticipants, memberWeights);
     } else {
       if (Math.abs(exactSplitDiff) > 0.009) {
         setError(
@@ -264,7 +370,7 @@ export function AddSplitExpenseModal({
       }
       finalSplits = selectedParticipants.map((mId) => ({
         memberId: mId,
-        amount: parseFloat(exactShares[mId] || "0") || 0,
+        amount: roundTo2Decimals(parseFloat(exactShares[mId] || "0") || 0),
       }));
     }
 
@@ -371,7 +477,7 @@ export function AddSplitExpenseModal({
                     required
                     placeholder="0.00"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => handleAmountChange(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3 py-2.5 text-sm font-extrabold text-[#10B981] outline-none focus:border-[#6366F1] text-right"
                   />
                 </div>
@@ -509,7 +615,7 @@ export function AddSplitExpenseModal({
                   <div className="flex items-center gap-1 bg-[var(--bg-card)] p-0.5 rounded-xl border border-[var(--border-color)] text-[10px] font-bold">
                     <button
                       type="button"
-                      onClick={() => setSplitMode("equal")}
+                      onClick={() => handleSetSplitMode("equal")}
                       className={`px-2.5 py-1 rounded-lg transition-all ${
                         splitMode === "equal"
                           ? "bg-[#6366F1] text-white"
@@ -520,7 +626,7 @@ export function AddSplitExpenseModal({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSplitMode("exact")}
+                      onClick={() => handleSetSplitMode("exact")}
                       className={`px-2.5 py-1 rounded-lg transition-all ${
                         splitMode === "exact"
                           ? "bg-[#6366F1] text-white"
@@ -532,26 +638,39 @@ export function AddSplitExpenseModal({
                   </div>
                 </div>
 
-                {/* Validation Status for Exact Split */}
+                {/* Validation Status & Auto-balance Controls for Exact Split */}
                 {splitMode === "exact" && (
-                  <div
-                    className={`flex items-center justify-between p-2 rounded-xl text-xs font-bold ${
-                      Math.abs(exactSplitDiff) < 0.009
-                        ? "bg-[#10B981]/10 text-[#10B981]"
-                        : "bg-[#EF4444]/10 text-[#EF4444]"
-                    }`}
-                  >
-                    <span>
-                      Allocated: {formatSplitCurrency(exactSplitSum, currency)} of{" "}
-                      {formatSplitCurrency(parsedTotal, currency)}
-                    </span>
-                    <span>
-                      {Math.abs(exactSplitDiff) < 0.009
-                        ? "Exact Match ✓"
-                        : exactSplitDiff > 0
-                        ? `${formatSplitCurrency(exactSplitDiff, currency)} left`
-                        : `${formatSplitCurrency(Math.abs(exactSplitDiff), currency)} over`}
-                    </span>
+                  <div className="space-y-1.5">
+                    <div
+                      className={`flex items-center justify-between p-2 rounded-xl text-xs font-bold ${
+                        Math.abs(exactSplitDiff) < 0.009
+                          ? "bg-[#10B981]/10 text-[#10B981]"
+                          : "bg-[#EF4444]/10 text-[#EF4444]"
+                      }`}
+                    >
+                      <span>
+                        Allocated: {formatSplitCurrency(exactSplitSum, currency)} of{" "}
+                        {formatSplitCurrency(parsedTotal, currency)}
+                      </span>
+                      <span>
+                        {Math.abs(exactSplitDiff) < 0.009
+                          ? "Exact Match ✓"
+                          : exactSplitDiff > 0
+                          ? `${formatSplitCurrency(exactSplitDiff, currency)} left`
+                          : `${formatSplitCurrency(Math.abs(exactSplitDiff), currency)} over`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] px-1 text-[var(--text-secondary)]">
+                      <span>💡 Change any value; other values adjust automatically.</span>
+                      <button
+                        type="button"
+                        onClick={handleResetToEqual}
+                        className="text-[#6366F1] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        ⚡ Reset to Equal
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -586,9 +705,16 @@ export function AddSplitExpenseModal({
                             {isSelected && <Check size={11} strokeWidth={3} />}
                           </div>
                           <div className="min-w-0">
-                            <span className="text-xs font-semibold text-[var(--text-primary)] truncate block">
-                              {m.name}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-semibold text-[var(--text-primary)] truncate block">
+                                {m.name}
+                              </span>
+                              {(m.familyCount || 1) > 1 && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#10B981]/15 text-[#10B981]">
+                                  👨‍👩‍👦 {m.familyCount} Persons
+                                </span>
+                              )}
+                            </div>
                             {m.isDependent && (
                               <span className="text-[9px] text-[#EC4899] font-medium block">
                                 Dependent · Debt routed to parent
@@ -606,20 +732,27 @@ export function AddSplitExpenseModal({
                                   : "₹0.00"}
                               </span>
                             ) : (
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="0.00"
-                                value={exactShares[m.id] || ""}
-                                onChange={(e) =>
-                                  setExactShares({
-                                    ...exactShares,
-                                    [m.id]: e.target.value,
-                                  })
-                                }
-                                className="w-24 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2 py-1 text-right text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
-                              />
+                              <div className="flex items-center gap-1.5">
+                                {customizedMemberIds.has(m.id) && (
+                                  <span
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/20"
+                                    title="Manually edited value"
+                                  >
+                                    Custom
+                                  </span>
+                                )}
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={exactShares[m.id] || ""}
+                                  onChange={(e) =>
+                                    handleExactShareChange(m.id, e.target.value)
+                                  }
+                                  className="w-24 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg px-2 py-1 text-right text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
+                                />
+                              </div>
                             )}
                           </div>
                         )}

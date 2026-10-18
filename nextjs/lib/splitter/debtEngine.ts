@@ -28,29 +28,139 @@ export function fromCents(cents: number): number {
 }
 
 /**
- * Evenly distribute total amount among participants, handling remainder cents
+ * Evenly or weighted distribute total amount among participants, handling remainder cents
  * so that sum(shares) exactly matches the total amount to the penny/paisa.
+ * Supports weighted distribution (e.g. family members headcount).
  */
 export function calculateEqualSplits(
   totalAmount: number,
-  memberIds: string[]
+  memberIds: string[],
+  memberWeights?: Record<string, number>
 ): { memberId: string; amount: number }[] {
   if (!memberIds.length) return [];
   const totalCents = toCents(totalAmount);
-  const baseShareCents = Math.floor(totalCents / memberIds.length);
-  let remainderCents = totalCents % memberIds.length;
 
-  return memberIds.map((memberId) => {
-    let cents = baseShareCents;
-    if (remainderCents > 0) {
-      cents += 1;
-      remainderCents -= 1;
+  // If weights are provided and any weight is different from 1
+  const hasCustomWeights =
+    memberWeights &&
+    memberIds.some((id) => (memberWeights[id] || 1) !== 1);
+
+  if (!hasCustomWeights) {
+    const baseShareCents = Math.floor(totalCents / memberIds.length);
+    let remainderCents = totalCents % memberIds.length;
+
+    return memberIds.map((memberId) => {
+      let cents = baseShareCents;
+      if (remainderCents > 0) {
+        cents += 1;
+        remainderCents -= 1;
+      }
+      return {
+        memberId,
+        amount: fromCents(cents),
+      };
+    });
+  }
+
+  // Weighted distribution (e.g. family headcount)
+  const weights = memberIds.map((id) => Math.max(1, memberWeights?.[id] || 1));
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+  if (totalWeight === 0) return [];
+
+  // Calculate unrounded cents and floor allocations
+  const unroundedCents = weights.map((w) => (totalCents * w) / totalWeight);
+  const floorCents = unroundedCents.map((c) => Math.floor(c));
+  const allocatedSum = floorCents.reduce((sum, c) => sum + c, 0);
+  const remainder = totalCents - allocatedSum;
+
+  // Distribute remainder 1 cent at a time to highest fractional parts
+  const withFractions = memberIds.map((memberId, idx) => ({
+    memberId,
+    cents: floorCents[idx],
+    fraction: unroundedCents[idx] - floorCents[idx],
+    idx,
+  }));
+
+  withFractions.sort((a, b) => b.fraction - a.fraction);
+
+  for (let i = 0; i < remainder; i++) {
+    withFractions[i % withFractions.length].cents += 1;
+  }
+
+  // Restore original ordering
+  withFractions.sort((a, b) => a.idx - b.idx);
+
+  return withFractions.map((item) => ({
+    memberId: item.memberId,
+    amount: fromCents(item.cents),
+  }));
+}
+
+/**
+ * Auto-balances exact split shares when one participant's share is edited.
+ * Preserves previously customized shares and distributes the remaining amount
+ * across the remaining participants (weighted by familyCount if present).
+ */
+export function autoBalanceExactShares(
+  totalAmount: number,
+  participantIds: string[],
+  currentShares: Record<string, string>,
+  editedMemberId: string,
+  newValStr: string,
+  customizedIds: Set<string>,
+  memberWeights?: Record<string, number>
+): {
+  updatedShares: Record<string, string>;
+  updatedCustomizedIds: Set<string>;
+} {
+  const updatedShares: Record<string, string> = { ...currentShares, [editedMemberId]: newValStr };
+  const nextCustomized = new Set(customizedIds);
+  nextCustomized.add(editedMemberId);
+
+  const parsedNewVal = parseFloat(newValStr);
+  const newAmount = isNaN(parsedNewVal) ? 0 : parsedNewVal;
+
+  // Determine which other participants should absorb the adjustment
+  // Prefer participants not yet customized; if all others are customized, adjust all other participants
+  let targetIds = participantIds.filter(
+    (id) => id !== editedMemberId && !nextCustomized.has(id)
+  );
+
+  if (targetIds.length === 0) {
+    targetIds = participantIds.filter((id) => id !== editedMemberId);
+  }
+
+  if (targetIds.length === 0) {
+    return { updatedShares, updatedCustomizedIds: nextCustomized };
+  }
+
+  // Calculate sum of locked amounts (participants NOT in targetIds)
+  let lockedSumCents = 0;
+  for (const id of participantIds) {
+    if (!targetIds.includes(id)) {
+      const val = id === editedMemberId ? newAmount : (parseFloat(updatedShares[id] || "0") || 0);
+      lockedSumCents += toCents(val);
     }
-    return {
-      memberId,
-      amount: fromCents(cents),
-    };
-  });
+  }
+
+  const totalCents = toCents(totalAmount);
+  const remainingCents = totalCents - lockedSumCents;
+
+  if (remainingCents <= 0) {
+    // No remaining budget, set target participants to 0.00
+    for (const id of targetIds) {
+      updatedShares[id] = "0.00";
+    }
+  } else {
+    const remainingAmount = fromCents(remainingCents);
+    const splits = calculateEqualSplits(remainingAmount, targetIds, memberWeights);
+    for (const split of splits) {
+      updatedShares[split.memberId] = split.amount.toFixed(2);
+    }
+  }
+
+  return { updatedShares, updatedCustomizedIds: nextCustomized };
 }
 
 /**

@@ -210,12 +210,19 @@ export default function SplitterMembersPage() {
               <Users2 size={20} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                {activeSession.template === "family" ? "Household / Family Mode" : "Group Expense Mode"}
-              </h3>
-              <p className="text-xs text-[var(--text-secondary)]">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  {activeSession.template === "family" ? "Household / Family Mode" : "Group Expense Mode"}
+                </h3>
+                {activeSession.members.reduce((acc, m) => acc + (m.familyCount || 1), 0) > activeSession.members.length && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/20">
+                    👨‍👩‍👧 {activeSession.members.reduce((acc, m) => acc + (m.familyCount || 1), 0)} Total Persons
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 {activeSession.template === "family"
-                  ? "Head / Parent covers dependent member dues"
+                  ? "Head / Parent covers family headcount and dependent dues"
                   : "All independent participants settle their own balances"}
               </p>
             </div>
@@ -262,6 +269,11 @@ export default function SplitterMembersPage() {
                       {isCurrentUser && (
                         <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md bg-[#6366F1]/15 text-[#6366F1]">
                           You
+                        </span>
+                      )}
+                      {(memberObj?.familyCount || 1) > 1 && (
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md bg-[#10B981]/15 text-[#10B981]">
+                          👨‍👩‍👦 {memberObj?.familyCount} Persons
                         </span>
                       )}
                       {pos.isDependent && (

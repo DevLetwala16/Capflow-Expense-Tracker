@@ -66,7 +66,13 @@ export async function POST(
     let finalSplits = splits;
     if (splitMode === 'equal') {
       const participantIds = splits.map((s: any) => s.memberId);
-      finalSplits = calculateEqualSplits(parsedAmount, participantIds);
+      const memberWeights: Record<string, number> = {};
+      session.members?.forEach((m: any) => {
+        if (m.familyCount && m.familyCount > 1) {
+          memberWeights[m.id] = m.familyCount;
+        }
+      });
+      finalSplits = calculateEqualSplits(parsedAmount, participantIds, memberWeights);
     } else {
       // Validate exact split sum
       const splitSumCents = splits.reduce((acc: number, s: any) => acc + toCents(s.amount), 0);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, UserPlus, Link as LinkIcon } from "lucide-react";
+import { X, UserPlus, Link as LinkIcon, Users } from "lucide-react";
 import { SplitMember } from "@/types/splitter";
 
 const MEMBER_COLORS = [
@@ -32,6 +32,7 @@ export function AddMemberModal({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [familyCount, setFamilyCount] = useState<number>(1);
   const [isDependent, setIsDependent] = useState(false);
   const [primaryPayerId, setPrimaryPayerId] = useState(
     existingMembers.find((m) => !m.isDependent)?.id || existingMembers[0]?.id || ""
@@ -65,6 +66,7 @@ export function AddMemberModal({
         email: email.trim() || undefined,
         handle: cleanHandle,
         color,
+        familyCount: familyCount > 0 ? familyCount : 1,
         isDependent,
         primaryPayerMemberId: isDependent ? primaryPayerId : undefined,
       };
@@ -73,6 +75,7 @@ export function AddMemberModal({
       setName("");
       setPhone("");
       setEmail("");
+      setFamilyCount(1);
       setIsDependent(false);
       onClose();
     } catch (err: any) {
@@ -163,6 +166,46 @@ export function AddMemberModal({
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
                 />
+              </div>
+
+              {/* Family Headcount / Size */}
+              <div className="p-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                    <Users size={13} className="text-[#6366F1]" />
+                    <span>Family Headcount (Persons)</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-[#6366F1] px-2 py-0.5 rounded-full bg-[#6366F1]/10">
+                    {familyCount === 1 ? "1 Person (Self)" : `👨‍👩‍👧 ${familyCount} Persons`}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Total people this member represents in the family. Expenses split automatically based on this headcount.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setFamilyCount(Math.max(1, familyCount - 1))}
+                    className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={familyCount}
+                    onChange={(e) => setFamilyCount(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="flex-1 text-center py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFamilyCount(Math.min(20, familyCount + 1))}
+                    className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               {/* Dependent checkbox */}

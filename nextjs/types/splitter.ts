@@ -12,6 +12,7 @@ export interface SplitMember {
   avatar?: string;
   isDependent: boolean; // if true, financial liability is routed to primaryPayerMemberId
   primaryPayerMemberId?: string; // id of independent member who covers their dues
+  familyCount?: number; // Number of family members represented (default 1, e.g. 4 for family of 4)
   userId?: string; // optional linked CapFlow user account ID
 }
 

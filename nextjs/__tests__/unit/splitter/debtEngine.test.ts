@@ -1,5 +1,6 @@
 import {
   calculateEqualSplits,
+  autoBalanceExactShares,
   calculateMemberNetPositions,
   simplifyDebts,
   roundTo2Decimals,
@@ -173,5 +174,57 @@ describe('Splitter Debt Engine', () => {
     expect(simplified[0].fromMemberName).toBe('Bob');
     expect(simplified[0].toMemberName).toBe('Alice');
     expect(simplified[0].amount).toBe(400);
+  });
+
+  test('calculateEqualSplits distributes amounts proportionally by family headcount', () => {
+    // 7000 total: Ramesh (family of 4), Priya (family of 2), Amit (1)
+    // 4 + 2 + 1 = 7 parts
+    // Ramesh: 4000, Priya: 2000, Amit: 1000
+    const weights = { m_ramesh: 4, m_priya: 2, m_amit: 1 };
+    const splits = calculateEqualSplits(7000, ['m_ramesh', 'm_priya', 'm_amit'], weights);
+    
+    expect(splits).toHaveLength(3);
+    const sum = splits.reduce((acc, s) => acc + s.amount, 0);
+    expect(roundTo2Decimals(sum)).toBe(7000);
+
+    const ramesh = splits.find((s) => s.memberId === 'm_ramesh')!;
+    const priya = splits.find((s) => s.memberId === 'm_priya')!;
+    const amit = splits.find((s) => s.memberId === 'm_amit')!;
+
+    expect(ramesh.amount).toBe(4000);
+    expect(priya.amount).toBe(2000);
+    expect(amit.amount).toBe(1000);
+  });
+
+  test('autoBalanceExactShares auto-balances other members when one member value is changed', () => {
+    // Total: 1000, 4 participants A, B, C, D (initially 250 each)
+    const participants = ['A', 'B', 'C', 'D'];
+    const initialShares = { A: '250.00', B: '250.00', C: '250.00', D: '250.00' };
+    const customizedIds = new Set<string>();
+
+    // User edits A to 400: remaining 600 should be split equally across B, C, D (200 each)
+    const step1 = autoBalanceExactShares(1000, participants, initialShares, 'A', '400.00', customizedIds);
+    expect(step1.updatedShares['A']).toBe('400.00');
+    expect(step1.updatedShares['B']).toBe('200.00');
+    expect(step1.updatedShares['C']).toBe('200.00');
+    expect(step1.updatedShares['D']).toBe('200.00');
+    const sumStep1 = Object.values(step1.updatedShares).reduce((acc, v) => acc + parseFloat(v), 0);
+    expect(roundTo2Decimals(sumStep1)).toBe(1000);
+
+    // User then edits B to 350: A stays 400 (customized), remaining 250 split across C, D (125 each)
+    const step2 = autoBalanceExactShares(
+      1000,
+      participants,
+      step1.updatedShares,
+      'B',
+      '350.00',
+      step1.updatedCustomizedIds
+    );
+    expect(step2.updatedShares['A']).toBe('400.00');
+    expect(step2.updatedShares['B']).toBe('350.00');
+    expect(step2.updatedShares['C']).toBe('125.00');
+    expect(step2.updatedShares['D']).toBe('125.00');
+    const sumStep2 = Object.values(step2.updatedShares).reduce((acc, v) => acc + parseFloat(v), 0);
+    expect(roundTo2Decimals(sumStep2)).toBe(1000);
   });
 });

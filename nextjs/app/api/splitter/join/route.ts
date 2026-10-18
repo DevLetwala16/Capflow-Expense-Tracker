@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       avatar: member.avatar,
       isDependent: !!member.isDependent,
       primaryPayerMemberId: member.primaryPayerMemberId,
+      familyCount: typeof member.familyCount === "number" && member.familyCount > 0 ? member.familyCount : 1,
       userId: member.userId,
     };
 
