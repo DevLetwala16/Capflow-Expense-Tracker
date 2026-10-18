@@ -41,6 +41,8 @@ export interface SplitExpenseItem {
   paidBy: SplitPayerEntry[]; // Supports single payer or multi-payer
   splitMode: SplitMode;
   splits: SplitShareEntry[]; // Exact breakdown allocated per participant
+  considerFamilyMembers?: boolean; // Whether family headcount is factored into splitting
+  memberWeights?: Record<string, number>; // Custom headcount weights applied for this expense
   receiptImage?: string; // Base64 data URL
   notes?: string;
   createdAt: string;

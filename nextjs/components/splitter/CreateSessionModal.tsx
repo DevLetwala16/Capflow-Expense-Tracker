@@ -102,6 +102,7 @@ export function CreateSessionModal({
         .replace(/[^a-z0-9]/g, "")}`,
       color: "#6366F1",
       isDependent: false,
+      familyCount: 1,
       userId: currentUser?.id,
       email: currentUser?.email,
     },
@@ -110,10 +111,22 @@ export function CreateSessionModal({
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberPhone, setNewMemberPhone] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [newMemberFamilyCount, setNewMemberFamilyCount] = useState<number>(1);
   const [newMemberIsDependent, setNewMemberIsDependent] = useState(false);
   const [newMemberPrimaryPayerId, setNewMemberPrimaryPayerId] = useState("mem_1");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const handleUpdateMemberFamilyCount = (memberId: string, delta: number) => {
+    setMembers((prev) =>
+      prev.map((m) => {
+        if (m.id !== memberId) return m;
+        const currentCount = m.familyCount ?? 1;
+        const newCount = Math.max(1, Math.min(20, currentCount + delta));
+        return { ...m, familyCount: newCount };
+      })
+    );
+  };
 
   const handleAddMember = () => {
     if (!newMemberName.trim()) return;
@@ -129,6 +142,7 @@ export function CreateSessionModal({
       handle: cleanHandle,
       color: nextColor,
       isDependent: newMemberIsDependent,
+      familyCount: newMemberFamilyCount > 0 ? newMemberFamilyCount : 1,
       primaryPayerMemberId: newMemberIsDependent ? newMemberPrimaryPayerId : undefined,
     };
 
@@ -136,6 +150,7 @@ export function CreateSessionModal({
     setNewMemberName("");
     setNewMemberPhone("");
     setNewMemberEmail("");
+    setNewMemberFamilyCount(1);
     setNewMemberIsDependent(false);
   };
 
@@ -377,20 +392,25 @@ export function CreateSessionModal({
                     {members.map((m) => (
                       <div
                         key={m.id}
-                        className="flex items-center justify-between p-2.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)]"
+                        className="flex items-center justify-between p-2.5 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] gap-2"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div
                             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
                             style={{ backgroundColor: m.color }}
                           >
                             {m.name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="text-xs font-bold text-[var(--text-primary)] truncate">
                                 {m.name}
                               </p>
+                              {(m.familyCount ?? 1) > 1 && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1] flex-shrink-0">
+                                  👨‍👩‍👧 {m.familyCount} Persons
+                                </span>
+                              )}
                               {m.isDependent && (
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#EC4899]/15 text-[#EC4899] flex-shrink-0">
                                   Dependent
@@ -411,15 +431,42 @@ export function CreateSessionModal({
                           </div>
                         </div>
 
-                        {members.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMember(m.id)}
-                            className="p-1.5 rounded-full text-[var(--text-secondary)] hover:text-[#EF4444] transition-colors"
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {/* Mini Stepper for Member Family Headcount */}
+                          <div
+                            className="flex items-center gap-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2 py-0.5"
+                            title="Family Headcount"
                           >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                            <span className="text-[10px] font-medium text-[var(--text-secondary)] hidden sm:inline">Family:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateMemberFamilyCount(m.id, -1)}
+                              className="text-xs text-[var(--text-secondary)] hover:text-[#6366F1] font-bold px-1"
+                            >
+                              -
+                            </button>
+                            <span className="text-[10px] font-bold text-[var(--text-primary)] min-w-[14px] text-center">
+                              {m.familyCount ?? 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateMemberFamilyCount(m.id, 1)}
+                              className="text-xs text-[var(--text-secondary)] hover:text-[#6366F1] font-bold px-1"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          {members.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(m.id)}
+                              className="p-1.5 rounded-full text-[var(--text-secondary)] hover:text-[#EF4444] transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -453,6 +500,43 @@ export function CreateSessionModal({
                       onChange={(e) => setNewMemberEmail(e.target.value)}
                       className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
                     />
+
+                    {/* Family Headcount / Size */}
+                    <div className="p-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <label className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
+                          <Users size={12} className="text-[#6366F1]" />
+                          <span>Family Headcount</span>
+                        </label>
+                        <p className="text-[10px] text-[var(--text-secondary)]">
+                          {newMemberFamilyCount === 1 ? "1 Person (Self)" : `👨‍👩‍👧 Family of ${newMemberFamilyCount} persons`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setNewMemberFamilyCount((c) => Math.max(1, c - 1))}
+                          className="w-7 h-7 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={newMemberFamilyCount}
+                          onChange={(e) => setNewMemberFamilyCount(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-10 text-center py-1 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewMemberFamilyCount((c) => Math.min(20, c + 1))}
+                          className="w-7 h-7 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:border-[#6366F1] flex items-center justify-center transition-all"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
 
                     {/* Dependent Toggle */}
                     <div className="flex items-center justify-between pt-1">

@@ -37,6 +37,7 @@ const SplitMemberSchema = new Schema<SplitMember>(
     avatar: { type: String },
     isDependent: { type: Boolean, default: false },
     primaryPayerMemberId: { type: String },
+    familyCount: { type: Number, default: 1 },
     userId: { type: String },
   },
   { _id: false }
@@ -70,6 +71,8 @@ const SplitExpenseItemSchema = new Schema<SplitExpenseItem>(
         _id: false,
       },
     ],
+    considerFamilyMembers: { type: Boolean, default: true },
+    memberWeights: { type: Map, of: Number },
     receiptImage: { type: String },
     notes: { type: String },
     createdAt: { type: String, required: true },

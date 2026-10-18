@@ -38,6 +38,8 @@ export async function POST(
       paidBy = [],
       splitMode = 'equal',
       splits = [],
+      considerFamilyMembers,
+      memberWeights: customMemberWeights,
       receiptImage,
       notes,
     } = body;
@@ -67,11 +69,17 @@ export async function POST(
     if (splitMode === 'equal') {
       const participantIds = splits.map((s: any) => s.memberId);
       const memberWeights: Record<string, number> = {};
-      session.members?.forEach((m: any) => {
-        if (m.familyCount && m.familyCount > 1) {
-          memberWeights[m.id] = m.familyCount;
+      if (considerFamilyMembers !== false) {
+        if (customMemberWeights && typeof customMemberWeights === 'object') {
+          Object.assign(memberWeights, customMemberWeights);
+        } else {
+          session.members?.forEach((m: any) => {
+            if (m.familyCount && m.familyCount > 1) {
+              memberWeights[m.id] = m.familyCount;
+            }
+          });
         }
-      });
+      }
       finalSplits = calculateEqualSplits(parsedAmount, participantIds, memberWeights);
     } else {
       // Validate exact split sum
@@ -111,6 +119,8 @@ export async function POST(
         memberId: s.memberId,
         amount: roundTo2Decimals(s.amount),
       })),
+      considerFamilyMembers: considerFamilyMembers !== undefined ? considerFamilyMembers : true,
+      memberWeights: customMemberWeights,
       receiptImage,
       notes,
       createdAt: now,

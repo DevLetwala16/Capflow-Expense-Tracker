@@ -372,6 +372,8 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       paidBy: expenseData.paidBy || [],
       splitMode: expenseData.splitMode || 'equal',
       splits: expenseData.splits || [],
+      considerFamilyMembers: expenseData.considerFamilyMembers !== undefined ? expenseData.considerFamilyMembers : true,
+      memberWeights: expenseData.memberWeights,
       receiptImage: expenseData.receiptImage,
       notes: expenseData.notes,
       createdAt: expenseData.createdAt || now,

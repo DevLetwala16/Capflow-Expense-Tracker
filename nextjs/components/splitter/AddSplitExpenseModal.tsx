@@ -84,22 +84,43 @@ export function AddSplitExpenseModal({
   const [exactShares, setExactShares] = useState<Record<string, string>>({});
   const [customizedMemberIds, setCustomizedMemberIds] = useState<Set<string>>(new Set());
 
+  // Family Headcount Consideration & per-expense headcount adjustment
+  const hasFamilyHeadcounts = useMemo(
+    () => members.some((m) => (m.familyCount || 1) > 1),
+    [members]
+  );
+  const [considerFamilyMembers, setConsiderFamilyMembers] = useState(true);
+  const [expenseWeights, setExpenseWeights] = useState<Record<string, number>>({});
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Map of member family headcount weights (default 1)
-  const memberWeights = useMemo(() => {
+  // Active weights for splitting: returns undefined (1 share each) if considerFamilyMembers is false
+  const activeWeights = useMemo(() => {
+    if (!considerFamilyMembers) return undefined;
     const weights: Record<string, number> = {};
     members.forEach((m) => {
-      weights[m.id] = m.familyCount && m.familyCount > 1 ? m.familyCount : 1;
+      weights[m.id] = Math.max(1, expenseWeights[m.id] ?? (m.familyCount || 1));
     });
     return weights;
-  }, [members]);
+  }, [considerFamilyMembers, members, expenseWeights]);
+
+  // Total headcount of selected participants
+  const totalActiveHeadcount = useMemo(() => {
+    if (!considerFamilyMembers) return selectedParticipants.length;
+    return selectedParticipants.reduce((sum, id) => {
+      return sum + (activeWeights?.[id] || 1);
+    }, 0);
+  }, [considerFamilyMembers, selectedParticipants, activeWeights]);
 
   // Helper: compute equal/weighted shares map
-  const computeEqualSharesMap = (total: number, participants: string[]) => {
+  const computeEqualSharesMap = (
+    total: number,
+    participants: string[],
+    weights = activeWeights
+  ) => {
     if (total <= 0 || participants.length === 0) return {};
-    const splits = calculateEqualSplits(total, participants, memberWeights);
+    const splits = calculateEqualSplits(total, participants, weights);
     const map: Record<string, string> = {};
     splits.forEach((s) => {
       map[s.memberId] = s.amount.toFixed(2);
@@ -121,6 +142,15 @@ export function AddSplitExpenseModal({
       setNotes(existingExpense.notes || "");
       setReceiptImage(existingExpense.receiptImage);
       setSplitMode(existingExpense.splitMode);
+      setConsiderFamilyMembers(existingExpense.considerFamilyMembers !== false);
+
+      const initialWeights: Record<string, number> = {};
+      members.forEach((m) => {
+        initialWeights[m.id] =
+          existingExpense.memberWeights?.[m.id] ??
+          (m.familyCount && m.familyCount > 1 ? m.familyCount : 1);
+      });
+      setExpenseWeights(initialWeights);
 
       if (existingExpense.paidBy.length > 1) {
         setIsMultiPayer(true);
@@ -162,6 +192,14 @@ export function AddSplitExpenseModal({
       setSinglePayerId(currentMember?.id || members[0]?.id || "");
       setMultiPayers({});
       setSplitMode("equal");
+      setConsiderFamilyMembers(true);
+
+      const initialWeights: Record<string, number> = {};
+      members.forEach((m) => {
+        initialWeights[m.id] = m.familyCount && m.familyCount > 1 ? m.familyCount : 1;
+      });
+      setExpenseWeights(initialWeights);
+
       setSelectedParticipants(members.map((m) => m.id));
       setExactShares({});
       setCustomizedMemberIds(new Set());
@@ -174,8 +212,8 @@ export function AddSplitExpenseModal({
   // Compute equal splits preview
   const equalSplitsPreview = useMemo(() => {
     if (parsedTotal <= 0 || selectedParticipants.length === 0) return [];
-    return calculateEqualSplits(parsedTotal, selectedParticipants, memberWeights);
-  }, [parsedTotal, selectedParticipants, memberWeights]);
+    return calculateEqualSplits(parsedTotal, selectedParticipants, activeWeights);
+  }, [parsedTotal, selectedParticipants, activeWeights]);
 
   // Compute multi-payer sum & remaining
   const multiPayerSum = useMemo(() => {
@@ -207,7 +245,7 @@ export function AddSplitExpenseModal({
     const newTotal = parseFloat(newValStr) || 0;
     if (splitMode === "exact" && newTotal > 0) {
       if (customizedMemberIds.size === 0) {
-        setExactShares(computeEqualSharesMap(newTotal, selectedParticipants));
+        setExactShares(computeEqualSharesMap(newTotal, selectedParticipants, activeWeights));
       } else {
         const uncustomized = selectedParticipants.filter((id) => !customizedMemberIds.has(id));
         if (uncustomized.length > 0) {
@@ -217,7 +255,7 @@ export function AddSplitExpenseModal({
           }
           const remCents = toCents(newTotal) - lockedCents;
           if (remCents > 0) {
-            const splits = calculateEqualSplits(fromCents(remCents), uncustomized, memberWeights);
+            const splits = calculateEqualSplits(fromCents(remCents), uncustomized, activeWeights);
             const next = { ...exactShares };
             splits.forEach((s) => {
               next[s.memberId] = s.amount.toFixed(2);
@@ -238,7 +276,7 @@ export function AddSplitExpenseModal({
         0
       );
       if (currentSum === 0 || Math.abs(currentSum - parsedTotal) > 0.009) {
-        setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants));
+        setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, activeWeights));
         setCustomizedMemberIds(new Set());
       }
     }
@@ -247,8 +285,78 @@ export function AddSplitExpenseModal({
   // Reset exact shares to equal/headcount split
   const handleResetToEqual = () => {
     if (parsedTotal > 0) {
-      setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants));
+      setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, activeWeights));
       setCustomizedMemberIds(new Set());
+    }
+  };
+
+  // Toggle consider family members on/off
+  const handleToggleConsiderFamily = (enabled: boolean) => {
+    setConsiderFamilyMembers(enabled);
+    const targetWeights = enabled
+      ? members.reduce((acc, m) => {
+          acc[m.id] = Math.max(1, expenseWeights[m.id] ?? (m.familyCount || 1));
+          return acc;
+        }, {} as Record<string, number>)
+      : undefined;
+
+    if (splitMode === "exact" && parsedTotal > 0) {
+      setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, targetWeights));
+      setCustomizedMemberIds(new Set());
+    }
+  };
+
+  // Quick preset: by family size vs 1 share each (exclude kids)
+  const handleApplyPreset = (type: "family" | "equal") => {
+    if (type === "family") {
+      setConsiderFamilyMembers(true);
+      const targetWeights = members.reduce((acc, m) => {
+        acc[m.id] = Math.max(1, expenseWeights[m.id] ?? (m.familyCount || 1));
+        return acc;
+      }, {} as Record<string, number>);
+      if (parsedTotal > 0) {
+        setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, targetWeights));
+        setCustomizedMemberIds(new Set());
+      }
+    } else {
+      setConsiderFamilyMembers(false);
+      if (parsedTotal > 0) {
+        setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, undefined));
+        setCustomizedMemberIds(new Set());
+      }
+    }
+  };
+
+  // Adjust headcount weight for a specific member for this expense
+  const handleUpdateMemberWeight = (memberId: string, delta: number) => {
+    const current = expenseWeights[memberId] ?? (members.find((m) => m.id === memberId)?.familyCount || 1);
+    const nextWeight = Math.max(1, Math.min(20, current + delta));
+    const nextWeights = { ...expenseWeights, [memberId]: nextWeight };
+    setExpenseWeights(nextWeights);
+
+    if (considerFamilyMembers && parsedTotal > 0) {
+      if (splitMode === "exact") {
+        if (customizedMemberIds.size === 0) {
+          setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, nextWeights));
+        } else {
+          const uncustomized = selectedParticipants.filter((id) => !customizedMemberIds.has(id));
+          if (uncustomized.length > 0) {
+            let lockedCents = 0;
+            for (const id of Array.from(customizedMemberIds)) {
+              lockedCents += toCents(parseFloat(exactShares[id] || "0") || 0);
+            }
+            const remCents = toCents(parsedTotal) - lockedCents;
+            if (remCents > 0) {
+              const splits = calculateEqualSplits(fromCents(remCents), uncustomized, nextWeights);
+              const next = { ...exactShares };
+              splits.forEach((s) => {
+                next[s.memberId] = s.amount.toFixed(2);
+              });
+              setExactShares(next);
+            }
+          }
+        }
+      }
     }
   };
 
@@ -265,7 +373,7 @@ export function AddSplitExpenseModal({
       memberId,
       valStr,
       customizedMemberIds,
-      memberWeights
+      activeWeights
     );
     setExactShares(updatedShares);
     setCustomizedMemberIds(updatedCustomizedIds);
@@ -309,7 +417,7 @@ export function AddSplitExpenseModal({
     setSelectedParticipants(nextParticipants);
 
     if (splitMode === "exact" && parsedTotal > 0) {
-      setExactShares(computeEqualSharesMap(parsedTotal, nextParticipants));
+      setExactShares(computeEqualSharesMap(parsedTotal, nextParticipants, activeWeights));
       setCustomizedMemberIds(new Set());
     }
   };
@@ -354,7 +462,7 @@ export function AddSplitExpenseModal({
     // Build splits array
     let finalSplits: SplitShareEntry[] = [];
     if (splitMode === "equal") {
-      finalSplits = calculateEqualSplits(parsedTotal, selectedParticipants, memberWeights);
+      finalSplits = calculateEqualSplits(parsedTotal, selectedParticipants, activeWeights);
     } else {
       if (Math.abs(exactSplitDiff) > 0.009) {
         setError(
@@ -393,6 +501,8 @@ export function AddSplitExpenseModal({
         paidBy: finalPaidBy,
         splitMode,
         splits: finalSplits,
+        considerFamilyMembers,
+        memberWeights: considerFamilyMembers ? expenseWeights : undefined,
         receiptImage,
         notes: notes.trim() || undefined,
       });
@@ -638,6 +748,49 @@ export function AddSplitExpenseModal({
                   </div>
                 </div>
 
+                {/* Consider Family Members Option (when members have family headcount > 1) */}
+                {hasFamilyHeadcounts && (
+                  <div className="p-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-between gap-2">
+                    <div className="min-w-0 pr-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <label
+                          className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5 cursor-pointer select-none"
+                          onClick={() => handleToggleConsiderFamily(!considerFamilyMembers)}
+                        >
+                          <Users size={12} className="text-[#6366F1]" />
+                          <span>Consider Family Members</span>
+                        </label>
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            considerFamilyMembers
+                              ? "bg-[#10B981]/15 text-[#10B981]"
+                              : "bg-[var(--border-color)] text-[var(--text-secondary)]"
+                          }`}
+                        >
+                          {considerFamilyMembers
+                            ? `👨‍👩‍👧 ${totalActiveHeadcount} Total Persons`
+                            : `👤 1 Each (${selectedParticipants.length} persons)`}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                        {considerFamilyMembers
+                          ? "Splitting proportionally by family headcount (kids/family included)."
+                          : "Exclude kids/family headcount — split equally 1 share per member."}
+                      </p>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={considerFamilyMembers}
+                        onChange={(e) => handleToggleConsiderFamily(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4.5 bg-[var(--border-color)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#6366F1]"></div>
+                    </label>
+                  </div>
+                )}
+
                 {/* Validation Status & Auto-balance Controls for Exact Split */}
                 {splitMode === "exact" && (
                   <div className="space-y-1.5">
@@ -661,14 +814,43 @@ export function AddSplitExpenseModal({
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] px-1 text-[var(--text-secondary)]">
-                      <span>💡 Change any value; other values adjust automatically.</span>
+                    <div className="flex items-center justify-between text-[11px] px-1 text-[var(--text-secondary)] flex-wrap gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {hasFamilyHeadcounts && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset("family")}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                considerFamilyMembers
+                                  ? "bg-[#6366F1]/15 text-[#6366F1] border-[#6366F1]/30"
+                                  : "bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--text-primary)]"
+                              }`}
+                              title="Split by each member's family headcount"
+                            >
+                              👨‍👩‍👧 By Family Size
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset("equal")}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                !considerFamilyMembers
+                                  ? "bg-[#6366F1]/15 text-[#6366F1] border-[#6366F1]/30"
+                                  : "bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--text-primary)]"
+                              }`}
+                              title="Ignore kids / split 1 share per member"
+                            >
+                              👤 1 Share Each (Exclude Kids)
+                            </button>
+                          </>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={handleResetToEqual}
-                        className="text-[#6366F1] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-[#6366F1] font-bold hover:underline flex items-center gap-1 cursor-pointer ml-auto text-[11px]"
                       >
-                        ⚡ Reset to Equal
+                        ⚡ Reset
                       </button>
                     </div>
                   </div>
@@ -681,6 +863,7 @@ export function AddSplitExpenseModal({
                     const equalPreview = equalSplitsPreview.find(
                       (p) => p.memberId === m.id
                     );
+                    const memberWeight = expenseWeights[m.id] ?? (m.familyCount || 1);
 
                     return (
                       <div
@@ -709,10 +892,41 @@ export function AddSplitExpenseModal({
                               <span className="text-xs font-semibold text-[var(--text-primary)] truncate block">
                                 {m.name}
                               </span>
-                              {(m.familyCount || 1) > 1 && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-[#10B981]/15 text-[#10B981]">
-                                  👨‍👩‍👦 {m.familyCount} Persons
-                                </span>
+                              {considerFamilyMembers ? (
+                                (m.familyCount || 1) > 1 && (
+                                  <div
+                                    className="flex items-center gap-1 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-md px-1.5 py-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Adjust kids/family members counted for this expense"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateMemberWeight(m.id, -1)}
+                                      className="text-[10px] text-[var(--text-secondary)] hover:text-[#6366F1] font-bold px-0.5"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="text-[9px] font-bold text-[#10B981] min-w-[12px] text-center">
+                                      👨‍👩‍👦 {memberWeight}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateMemberWeight(m.id, 1)}
+                                      className="text-[10px] text-[var(--text-secondary)] hover:text-[#6366F1] font-bold px-0.5"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                )
+                              ) : (
+                                (m.familyCount || 1) > 1 && (
+                                  <span
+                                    className="text-[9px] font-medium text-[var(--text-secondary)] px-1.5 py-0.2 rounded bg-[var(--bg-primary)] border border-[var(--border-color)] line-through opacity-70"
+                                    title="Kids/family excluded for this expense"
+                                  >
+                                    {m.familyCount} pers.
+                                  </span>
+                                )
                               )}
                             </div>
                             {m.isDependent && (
