@@ -117,12 +117,15 @@ export default function BudgetsPage() {
   });
 
   const { user } = useAuthStore();
-  const { sessions, loadSessions } = useSplitterStore();
+  const { sessions, loading: splitterLoading, loadSessions } = useSplitterStore();
 
   useEffect(() => {
-    if (user?.id) loadSessions(user.id);
-    else loadSessions("guest_user");
-  }, [user, loadSessions]);
+    if (user?.id) {
+      loadSessions(user.id);
+    } else if (typeof window !== "undefined" && !localStorage.getItem("capflow_auth")) {
+      loadSessions("guest_user");
+    }
+  }, [user?.id, loadSessions]);
 
   const addFundsGoal = goals.find((g) => g.id === addFundsGoalId);
 
@@ -165,7 +168,11 @@ export default function BudgetsPage() {
                 <ArrowRight size={13} />
               </Link>
             </div>
-            <SplitterCard sessions={sessions} currencySymbol={symbol} />
+            <SplitterCard
+              sessions={sessions}
+              currencySymbol={symbol}
+              loading={splitterLoading && sessions.length === 0}
+            />
           </section>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">

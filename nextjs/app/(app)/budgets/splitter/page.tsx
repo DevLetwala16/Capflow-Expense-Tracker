@@ -55,10 +55,10 @@ export default function SplitterSessionsHub() {
   useEffect(() => {
     if (user?.id) {
       loadSessions(user.id);
-    } else {
+    } else if (typeof window !== "undefined" && !localStorage.getItem("capflow_auth")) {
       loadSessions("guest_user");
     }
-  }, [user, loadSessions]);
+  }, [user?.id, loadSessions]);
 
   useEffect(() => {
     if (joinParam) {

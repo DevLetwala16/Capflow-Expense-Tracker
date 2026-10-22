@@ -100,46 +100,76 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
   },
 
   loadSessions: async (userId: string) => {
-    set({ loading: true });
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    // 1. If strictly offline, use Dexie as the sole source of truth
+    if (isOffline) {
+      set({ loading: true, isOffline: true });
+      try {
+        const localSessions = await db.splitSessions.toArray();
+        const userLocal = localSessions.filter(
+          (s) => s.userId === userId || s.members?.some((m) => m.userId === userId)
+        );
+        set({ sessions: userLocal, loading: false });
+      } catch {
+        set({ loading: false });
+      }
+      return;
+    }
+
+    // 2. When online, do NOT display unverified local data that may contain deleted sessions.
+    // Fetch authoritative sessions from MongoDB first.
+    set({ loading: true, isOffline: false });
     try {
-      // 1. Read from Dexie local database for instant UI
+      const res = await fetch(`/api/splitter/sessions?userId=${encodeURIComponent(userId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.sessions && Array.isArray(data.sessions)) {
+          const remoteSessions: SplitSession[] = data.sessions;
+          const remoteSessionIds = new Set(remoteSessions.map((s) => s.sessionId));
+
+          // Reconcile Dexie: purge deleted/stale sessions from IndexedDB, and upsert fresh ones
+          await db.transaction('rw', db.splitSessions, async () => {
+            const allLocal = await db.splitSessions.toArray();
+            for (const ls of allLocal) {
+              const belongsToUser =
+                ls.userId === userId || ls.members?.some((m) => m.userId === userId);
+              if (belongsToUser && !remoteSessionIds.has(ls.sessionId)) {
+                await db.splitSessions.where('sessionId').equals(ls.sessionId).delete();
+                if (ls.id) await db.splitSessions.delete(ls.id);
+              }
+            }
+
+            for (const s of remoteSessions) {
+              const existing = await db.splitSessions
+                .where('sessionId')
+                .equals(s.sessionId)
+                .first();
+              if (existing?.id) {
+                await db.splitSessions.put({ ...s, id: existing.id });
+              } else {
+                await db.splitSessions.add(s);
+              }
+            }
+          });
+
+          // Set verified sessions cleanly with zero UI flicker or ghost cards
+          set({ sessions: remoteSessions, loading: false });
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('[Splitter] Remote sync failed, falling back to local offline data:', e);
+    }
+
+    // Fallback to Dexie ONLY if remote fetch threw a network error / server unreachable
+    try {
       const localSessions = await db.splitSessions.toArray();
       const userLocal = localSessions.filter(
         (s) => s.userId === userId || s.members?.some((m) => m.userId === userId)
       );
-      if (userLocal.length > 0) {
-        set({ sessions: userLocal });
-      }
-
-      // 2. Fetch from remote MongoDB API if online
-      if (typeof navigator === 'undefined' || navigator.onLine) {
-        try {
-          const res = await fetch(`/api/splitter/sessions?userId=${encodeURIComponent(userId)}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.sessions && Array.isArray(data.sessions)) {
-              // Cache to Dexie in an atomic transaction
-              await db.transaction('rw', db.splitSessions, async () => {
-                for (const s of data.sessions) {
-                  const existing = await db.splitSessions
-                    .where('sessionId')
-                    .equals(s.sessionId)
-                    .first();
-                  if (existing?.id) {
-                    await db.splitSessions.put({ ...s, id: existing.id });
-                  } else {
-                    await db.splitSessions.add(s);
-                  }
-                }
-              });
-              set({ sessions: data.sessions });
-            }
-          }
-        } catch (e) {
-          console.warn('[Splitter] Remote sync failed, using local offline data:', e);
-        }
-      }
-    } finally {
+      set({ sessions: userLocal, loading: false });
+    } catch {
       set({ loading: false });
     }
   },
@@ -147,7 +177,7 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
   loadSessionById: async (sessionId: string) => {
     set({ loading: true });
     try {
-      // 1. Check local Dexie first
+      // 1. Check local Dexie first for instant preview
       let session = await db.splitSessions.where('sessionId').equals(sessionId).first();
       if (session) {
         set({ activeSession: session });
@@ -175,6 +205,11 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
               set({ activeSession: session });
               lastKnownAuditLogId = session?.auditLogs?.[0]?.id || null;
             }
+          } else if (res.status === 404) {
+            // Session was deleted on remote! Purge from Dexie immediately
+            await db.splitSessions.where('sessionId').equals(sessionId).delete();
+            set({ activeSession: null });
+            return null;
           }
         } catch (e) {
           console.warn('[Splitter] Remote fetch failed, using local copy:', e);
@@ -329,19 +364,41 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
   },
 
   deleteSession: async (sessionId: string) => {
+    // 1. Immediately delete from local Dexie database (both by sessionId and id)
     await db.transaction('rw', db.splitSessions, async () => {
       await db.splitSessions.where('sessionId').equals(sessionId).delete();
+      const all = await db.splitSessions.toArray();
+      const toDelete = all.filter(
+        (s: any) => s.sessionId === sessionId || s._id === sessionId || String(s.id) === sessionId
+      );
+      for (const item of toDelete) {
+        if (item.id) await db.splitSessions.delete(item.id);
+      }
     });
 
+    // 2. Immediately update in-memory state
     set((state) => ({
-      sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
-      activeSession: state.activeSession?.sessionId === sessionId ? null : state.activeSession,
+      sessions: state.sessions.filter(
+        (s: any) => s.sessionId !== sessionId && s._id !== sessionId && String(s.id) !== sessionId
+      ),
+      activeSession:
+        state.activeSession?.sessionId === sessionId || (state.activeSession as any)?._id === sessionId
+          ? null
+          : state.activeSession,
     }));
 
+    // 3. AWAIT remote delete so server has removed it before callers navigate away
     if (typeof navigator === 'undefined' || navigator.onLine) {
-      fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-      }).catch(console.error);
+      try {
+        const res = await fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) {
+          console.warn(`[Splitter] Remote delete returned status ${res.status}`);
+        }
+      } catch (err) {
+        console.error('[Splitter] Failed to delete session on remote:', err);
+      }
     }
   },
 
@@ -552,12 +609,16 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       }));
 
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        fetch(
-          `/api/splitter/sessions/${encodeURIComponent(sessionId)}/expenses/${encodeURIComponent(
-            expenseId
-          )}`,
-          { method: 'DELETE' }
-        ).catch(console.error);
+        try {
+          await fetch(
+            `/api/splitter/sessions/${encodeURIComponent(sessionId)}/expenses/${encodeURIComponent(
+              expenseId
+            )}`,
+            { method: 'DELETE' }
+          );
+        } catch (err) {
+          console.warn('[Splitter] Network error during expense delete:', err);
+        }
       }
 
       // Sync removal to CapFlow transactions & update cumulative balance

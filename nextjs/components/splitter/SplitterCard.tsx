@@ -9,9 +9,31 @@ import { formatSplitCurrency } from "@/lib/splitter/debtEngine";
 interface SplitterCardProps {
   sessions: SplitSession[];
   currencySymbol?: string;
+  loading?: boolean;
 }
 
-export function SplitterCard({ sessions }: SplitterCardProps) {
+export function SplitterCard({ sessions, currencySymbol = "₹", loading = false }: SplitterCardProps) {
+  if (loading && sessions.length === 0) {
+    return (
+      <div className="relative overflow-hidden bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-3.5 sm:p-4 animate-pulse">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[var(--border-color)]/60" />
+            <div className="space-y-1.5">
+              <div className="w-36 h-4 bg-[var(--border-color)]/60 rounded" />
+              <div className="w-24 h-3 bg-[var(--border-color)]/40 rounded" />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)]">
+          <div className="h-8 bg-[var(--border-color)]/40 rounded" />
+          <div className="h-8 bg-[var(--border-color)]/40 rounded" />
+          <div className="h-8 bg-[var(--border-color)]/40 rounded" />
+        </div>
+      </div>
+    );
+  }
+
   const activeSessions = sessions.filter((s) => s.status === "active");
   const settledSessions = sessions.filter((s) => s.status === "settled");
 
