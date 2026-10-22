@@ -61,7 +61,66 @@ export async function checkDevicePermissions(): Promise<{
   return { notifications, camera };
 }
 
-export async function requestNotificationPermission(): Promise<NotificationPermission | "unsupported"> {
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export async function subscribeUserToWebPush(userId?: string, email?: string): Promise<boolean> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return false;
+  }
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!vapidPublicKey) {
+    console.warn("[NotificationEngine] NEXT_PUBLIC_VAPID_PUBLIC_KEY not configured.");
+    return false;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+    }
+
+    // Register Periodic Background Sync if supported (Android Chrome)
+    try {
+      if ("periodicSync" in reg) {
+        // @ts-ignore
+        await reg.periodicSync.register("capflow-daily-check", {
+          minInterval: 12 * 60 * 60 * 1000,
+        });
+      }
+    } catch {}
+
+    // Send subscription to server
+    await fetch("/api/notifications/push-subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subscription: sub.toJSON(),
+        userId,
+        email,
+      }),
+    });
+
+    return true;
+  } catch (err) {
+    console.warn("[NotificationEngine] WebPush registration error:", err);
+    return false;
+  }
+}
+
+export async function requestNotificationPermission(userId?: string, email?: string): Promise<NotificationPermission | "unsupported"> {
   if (typeof window === "undefined" || !("Notification" in window)) {
     return "unsupported";
   }
@@ -75,6 +134,8 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
       if (!settings.dailyReminderTime) {
         settings.setDailyReminderTime("21:00");
       }
+      // Automatically register Web Push subscription for background delivery
+      await subscribeUserToWebPush(userId, email);
     }
     return perm;
   } catch (err) {
@@ -428,3 +489,92 @@ export async function checkAutomatedMonthlyStatementEmail(
 
   return false;
 }
+
+// ─── Extra Situational Notifications ─────────────────────────────────────────
+
+/**
+ * Fires when a user adds/logs a personal transaction (expense or income)
+ */
+export async function notifyTransactionLogged({
+  type,
+  amount,
+  category,
+  title,
+  currency = "₹",
+}: {
+  type: "expense" | "income" | "transfer";
+  amount: number;
+  category?: string;
+  title?: string;
+  currency?: string;
+}) {
+  const isExp = type === "expense";
+  const icon = isExp ? "💸" : "💰";
+  const formatted = `${currency}${amount.toLocaleString("en-IN")}`;
+  const notifTitle = isExp ? `${icon} Expense Logged: ${formatted}` : `${icon} Income Added: ${formatted}`;
+  const notifBody = `${title || "Transaction"} (${category || "General"}) recorded successfully in CapFlow.`;
+
+  await sendNativeNotification(notifTitle, {
+    body: notifBody,
+    tag: `tx-${Date.now()}`,
+    inAppType: "success",
+  });
+}
+
+/**
+ * Fires when a split expense is added or logged in a Splitter group
+ */
+export async function notifySplitExpenseLogged({
+  sessionName,
+  title,
+  amount,
+  currency = "₹",
+  payerName,
+  yourShare,
+}: {
+  sessionName: string;
+  title: string;
+  amount: number;
+  currency?: string;
+  payerName: string;
+  yourShare?: number;
+}) {
+  const formattedTotal = `${currency}${amount.toLocaleString("en-IN")}`;
+  const notifTitle = `👥 Split Expense: ${sessionName}`;
+  const shareText = yourShare ? ` Your share: ${currency}${yourShare.toLocaleString("en-IN")}.` : "";
+  const notifBody = `${payerName} added "${title}" for ${formattedTotal}.${shareText}`;
+
+  await sendNativeNotification(notifTitle, {
+    body: notifBody,
+    tag: `split-exp-${Date.now()}`,
+    inAppType: "info",
+  });
+}
+
+/**
+ * Fires when a settlement is recorded between members
+ */
+export async function notifySplitSettlementLogged({
+  sessionName,
+  fromName,
+  toName,
+  amount,
+  currency = "₹",
+}: {
+  sessionName: string;
+  fromName: string;
+  toName: string;
+  amount: number;
+  currency?: string;
+}) {
+  const formatted = `${currency}${amount.toLocaleString("en-IN")}`;
+  const notifTitle = `🤝 Settlement in ${sessionName}`;
+  const notifBody = `${fromName} paid ${toName} ${formatted}. Group balances updated!`;
+
+  await sendNativeNotification(notifTitle, {
+    body: notifBody,
+    tag: `split-stl-${Date.now()}`,
+    inAppType: "success",
+  });
+}
+

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
 import { SplitMember, SplitAuditLog } from '@/types/splitter';
+import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,23 @@ export async function POST(req: NextRequest) {
     session.auditLogs.unshift(auditLog);
 
     await session.save();
+
+    // Notify session owner in background
+    try {
+      if (session.userId) {
+        sendWebPushToUsers({
+          userIds: [session.userId],
+          payload: {
+            title: `👋 New Member in ${session.name}`,
+            body: `${joinedMember.name} joined your group!`,
+            tag: `split-join-${joinedMember.id}`,
+            data: { url: `/budgets/splitter/${session.sessionId}` },
+          },
+        }).catch((err) => console.warn("[WebPush] Async join push error:", err));
+      }
+    } catch (pushErr) {
+      console.warn("[WebPush] Error preparing join notification:", pushErr);
+    }
 
     return NextResponse.json({
       success: true,

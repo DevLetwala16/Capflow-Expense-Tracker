@@ -12,6 +12,7 @@ import {
   checkEMIDueReminders,
   checkBudgetWarnings,
   checkAutomatedMonthlyStatementEmail,
+  subscribeUserToWebPush,
 } from "@/lib/notifications/notificationEngine";
 import { format } from "date-fns";
 
@@ -32,6 +33,11 @@ export function useNotificationEngine() {
 
       try {
         const userId = user?.id || user?.email;
+
+        // Ensure Web Push subscription is registered on the device and server for background alerts
+        if (settings.pushNotificationsEnabled && typeof window !== "undefined") {
+          subscribeUserToWebPush(user?.id, user?.email).catch(() => {});
+        }
 
         // 1. Daily expense reminder (Zomato/Duolingo style)
         if (settings.notifDailyReminder && userId) {

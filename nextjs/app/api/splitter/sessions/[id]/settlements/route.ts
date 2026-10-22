@@ -3,6 +3,7 @@ import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
 import { roundTo2Decimals, formatSplitCurrency } from '@/lib/splitter/debtEngine';
 import { SplitSettlement, SplitAuditLog } from '@/types/splitter';
+import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +87,26 @@ export async function POST(
     session.auditLogs.unshift(auditLog);
 
     await session.save();
+
+    // Notify settlement participants in background
+    try {
+      const recipientEmails = [toMember.email, fromMember.email].filter(Boolean) as string[];
+      const recipientUserIds = [toMember.userId, fromMember.userId].filter(Boolean) as string[];
+      if (recipientEmails.length > 0 || recipientUserIds.length > 0) {
+        sendWebPushToUsers({
+          emails: recipientEmails,
+          userIds: recipientUserIds,
+          payload: {
+            title: `🤝 Settlement: ${session.name}`,
+            body: `${fromMember.name} paid ${toMember.name} ${formatSplitCurrency(parsedAmount, session.currency)}. Balances updated!`,
+            tag: `split-stl-${newSettlement.id}`,
+            data: { url: `/budgets/splitter/${session.sessionId}` },
+          },
+        }).catch((err) => console.warn("[WebPush] Async settlement push error:", err));
+      }
+    } catch (pushErr) {
+      console.warn("[WebPush] Error preparing settlement notification:", pushErr);
+    }
 
     return NextResponse.json({
       success: true,

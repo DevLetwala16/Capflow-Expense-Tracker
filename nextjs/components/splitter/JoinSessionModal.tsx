@@ -11,7 +11,6 @@ import {
   Camera,
   CameraOff,
   RefreshCw,
-  UploadCloud,
   CheckCircle2,
   AlertTriangle,
   Sparkles,
@@ -21,7 +20,6 @@ import { SplitMember } from "@/types/splitter";
 import {
   extractSessionIdFromQR,
   decodeQRCodeFromVideo,
-  decodeQRCodeFromFile,
 } from "@/lib/splitter/qrScanner";
 
 interface JoinSessionModalProps {
@@ -58,13 +56,12 @@ export function JoinSessionModal({
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const facingModeRef = useRef<"environment" | "user">("environment");
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Stop camera stream safely
   const stopCamera = useCallback(() => {
@@ -186,39 +183,87 @@ export function JoinSessionModal({
     [stopCamera, autoJoinDirectly, displayName, currentUser, executeJoin]
   );
 
-  // Start live video camera
+  // Start live video camera with robust facingMode & hardware device switching
   const startCamera = useCallback(
-    async (targetFacing: "environment" | "user" = facingMode) => {
+    async (targetFacing?: "environment" | "user") => {
+      const mode = targetFacing || facingModeRef.current;
       setCameraError(null);
       setCameraStarting(true);
 
-      // Stop any existing stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
+      // 1. Cleanly stop old stream & clear scanning loop
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
         scanIntervalRef.current = null;
       }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => {
+          t.stop();
+          t.enabled = false;
+        });
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+
+      // Small hardware release interval for mobile camera sensors
+      await new Promise((r) => setTimeout(r, 60));
 
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("Live WebRTC camera is unavailable or not supported in this browser. Please use 'Take Photo with Phone Camera' below.");
+          throw new Error("Live camera is not supported in this browser.");
         }
 
         let stream: MediaStream | null = null;
+
+        // Step A: Attempt exact facingMode (mandatory switch on mobile browsers)
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
-              facingMode: { ideal: targetFacing },
+              facingMode: { exact: mode },
               width: { ideal: 1280 },
               height: { ideal: 720 },
             },
           });
-        } catch (constraintErr) {
-          // Fallback to basic unconstrained video if resolution or facingMode was rejected
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch {
+          // Step B: Query enumerated video input devices to switch deviceId
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevs = devices.filter((d) => d.kind === "videoinput");
+            if (videoDevs.length > 1) {
+              const matchedDev = videoDevs.find((d) =>
+                mode === "environment"
+                  ? /back|rear|environment|world/i.test(d.label)
+                  : /front|user|selfie|face/i.test(d.label)
+              ) || (mode === "environment" ? videoDevs[videoDevs.length - 1] : videoDevs[0]);
+
+              if (matchedDev && matchedDev.deviceId) {
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    deviceId: { exact: matchedDev.deviceId },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                  },
+                });
+              }
+            }
+          } catch {}
+
+          // Step C: Fallback to ideal facingMode
+          if (!stream) {
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                  facingMode: { ideal: mode },
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                },
+              });
+            } catch {
+              // Step D: Final fallback to unconstrained video
+              stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
+          }
         }
 
         streamRef.current = stream;
@@ -260,14 +305,14 @@ export function JoinSessionModal({
           (err?.message && err.message.toLowerCase().includes("permission denied"));
         setCameraError(
           isPermission
-            ? "Camera permission was denied. Tap 'Take Photo with Phone Camera' below to launch your phone's camera directly, or grant camera access in browser site settings."
-            : (err?.message || "Unable to access device camera. Please use 'Take Photo with Phone Camera' below.")
+            ? "Camera permission was denied. Please allow camera permissions in site settings or enter Session ID manually."
+            : (err?.message || "Unable to access device camera. Please enter Session ID manually.")
         );
         setCameraActive(false);
         setCameraStarting(false);
       }
     },
-    [facingMode, handleCodeDetected]
+    [handleCodeDetected]
   );
 
   // Auto-start camera when modal opens in "scan" mode
@@ -289,30 +334,11 @@ export function JoinSessionModal({
     }
   }, [cameraActive]);
 
-  const handleToggleFacingMode = () => {
+  const handleToggleFacingMode = async () => {
     const next = facingMode === "environment" ? "user" : "environment";
     setFacingMode(next);
-    startCamera(next);
-  };
-
-  // Upload QR photo from gallery / file
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setError("");
-    try {
-      const rawQR = await decodeQRCodeFromFile(file);
-      if (rawQR) {
-        handleCodeDetected(rawQR);
-      } else {
-        setError("No QR code detected in the selected image. Please try another photo.");
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to process photo.");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    facingModeRef.current = next;
+    await startCamera(next);
   };
 
   // Manual Form Submission
@@ -538,62 +564,27 @@ export function JoinSessionModal({
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => nativeCameraInputRef.current?.click()}
+                        onClick={() => startCamera()}
                         className="py-2 px-2.5 rounded-xl bg-[#6366F1] text-white text-[11px] font-bold hover:bg-[#4F46E5] transition-all flex items-center justify-center gap-1.5 shadow-sm"
                       >
-                        <Camera size={13} />
-                        <span>Open Phone Camera</span>
+                        <RefreshCw size={12} />
+                        <span>Retry Camera</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => startCamera()}
+                        onClick={() => {
+                          stopCamera();
+                          setActiveTab("manual");
+                          setError("");
+                        }}
                         className="py-2 px-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-[11px] font-semibold hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
                       >
-                        <RefreshCw size={12} />
-                        <span>Retry Permission</span>
+                        <QrCode size={12} />
+                        <span>Enter ID Manually</span>
                       </button>
                     </div>
                   </div>
                 )}
-
-                {/* Mobile Camera & Photo Scanner Fallbacks */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => nativeCameraInputRef.current?.click()}
-                    className="py-2.5 px-3 rounded-xl bg-[#6366F1]/10 text-[#6366F1] border border-[#6366F1]/30 hover:bg-[#6366F1]/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Camera size={14} />
-                    <span>Snap with Camera</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="py-2.5 px-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs font-semibold hover:border-[#6366F1] transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <UploadCloud size={14} />
-                    <span>Pick Image / File</span>
-                  </button>
-
-                  {/* Native camera direct snap input */}
-                  <input
-                    ref={nativeCameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
-                  {/* Photo picker input without capture attribute */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
-                </div>
 
                 {/* Scanned Result Banner */}
                 {detectedCode && (

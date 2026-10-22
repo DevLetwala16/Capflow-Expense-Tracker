@@ -1133,61 +1133,6 @@ export default function SettingsPage() {
               )}
             </>
           )}
-
-          {/* Test & Hardware Permissions Trigger */}
-          <div className="p-3.5 border-t border-[var(--border-color)] bg-white/[0.02] flex flex-col gap-2.5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5">
-                  <Sparkles size={14} className="text-[#6366F1]" />
-                  Notification & Hardware Tools
-                </p>
-                <p className="text-[11px] text-[var(--text-secondary)]">
-                  Verify device alerts and manage hardware permissions
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPermissionModal(true)}
-                className="px-3 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1]/20 text-[#6366F1] font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <Camera size={13} />
-                <span>Device Permissions</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleTestNotification}
-                disabled={testingNotif}
-                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
-              >
-                <Bell size={13} className="text-[#6366F1]" />
-                <span>{testingNotif ? "Sending..." : "Test App Alert"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTestEmail("emi")}
-                disabled={testingEmail || !user?.email}
-                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
-              >
-                <CreditCard size={13} className="text-emerald-400" />
-                <span>{testingEmail ? "Sending..." : "Test EMI Mail"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleTestEmail("summary")}
-                disabled={testingEmail || !user?.email}
-                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 col-span-2 sm:col-span-1 cursor-pointer"
-              >
-                <Calendar size={13} className="text-amber-400" />
-                <span>{testingEmail ? "Sending..." : "Test Summary Mail"}</span>
-              </button>
-            </div>
-          </div>
         </SettingsSection>
 
         {/* ── 5. Advanced Modules (Sub-Pages) ─────────────────────────────────── */}

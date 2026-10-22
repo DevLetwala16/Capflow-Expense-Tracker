@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, ArrowRight, CheckCircle, HandCoins } from "lucide-react";
 import { SplitMember, SettlementTransaction } from "@/types/splitter";
 import { formatSplitCurrency } from "@/lib/splitter/debtEngine";
+import { notifySplitSettlementLogged } from "@/lib/notifications/notificationEngine";
 
 interface RecordSettlementModalProps {
   open: boolean;
@@ -85,6 +86,17 @@ export function RecordSettlementModal({
         notes: notes.trim() || undefined,
         date: new Date().toISOString(),
       });
+
+      const fromMember = members.find((m) => m.id === fromMemberId);
+      const toMember = members.find((m) => m.id === toMemberId);
+      notifySplitSettlementLogged({
+        sessionName: "Splitter",
+        fromName: fromMember?.name || "Member",
+        toName: toMember?.name || "Member",
+        amount: parsedAmount,
+        currency,
+      }).catch(() => {});
+
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to record settlement");

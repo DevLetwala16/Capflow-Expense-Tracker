@@ -31,6 +31,7 @@ import {
   toCents,
   fromCents,
 } from "@/lib/splitter/debtEngine";
+import { notifySplitExpenseLogged } from "@/lib/notifications/notificationEngine";
 
 const DEFAULT_CATEGORIES = [
   "Food & Dining",
@@ -508,6 +509,16 @@ export function AddSplitExpenseModal({
         receiptImage,
         notes: notes.trim() || undefined,
       });
+
+      // Fire notification for split expense logged
+      notifySplitExpenseLogged({
+        sessionName: "Splitter",
+        title: title.trim(),
+        amount: parsedTotal,
+        currency,
+        payerName: currentMember?.name || "You",
+      }).catch(() => {});
+
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to record expense");

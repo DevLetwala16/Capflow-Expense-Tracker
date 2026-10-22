@@ -89,9 +89,9 @@ export function DevicePermissionModal({ forceOpen = false, onClose }: DevicePerm
     let notifResult = false;
     let camResult = false;
 
-    // 1. Request Notification Permission
+    // 1. Request Notification Permission & Subscribe Web Push
     try {
-      const nPerm = await requestNotificationPermission();
+      const nPerm = await requestNotificationPermission(user?.id, user?.email);
       if (nPerm === "granted") {
         notifResult = true;
         setNotifGranted(true);

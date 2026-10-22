@@ -8,6 +8,7 @@ import {
   toCents,
 } from '@/lib/splitter/debtEngine';
 import { SplitExpenseItem, SplitAuditLog } from '@/types/splitter';
+import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -155,6 +156,34 @@ export async function POST(
     session.auditLogs.unshift(auditLog);
 
     await session.save();
+
+    // Notify group members in the background (even if app is closed!)
+    try {
+      const otherMembers = (session.members || []).filter(
+        (m: any) => m.id !== newExpense.createdBy.memberId
+      );
+      const recipientEmails = otherMembers
+        .map((m: any) => m.email)
+        .filter(Boolean) as string[];
+      const recipientUserIds = otherMembers
+        .map((m: any) => m.userId)
+        .filter(Boolean) as string[];
+
+      if (recipientEmails.length > 0 || recipientUserIds.length > 0) {
+        sendWebPushToUsers({
+          emails: recipientEmails,
+          userIds: recipientUserIds,
+          payload: {
+            title: `💸 New Split: ${session.name}`,
+            body: `${newExpense.createdBy.name} added "${newExpense.title}" for ${session.currency} ${newExpense.amount}. Tap to view breakdown!`,
+            tag: `split-exp-${newExpense.id}`,
+            data: { url: `/budgets/splitter/${session.sessionId}` },
+          },
+        }).catch((err) => console.warn("[WebPush] Async splitter push error:", err));
+      }
+    } catch (pushErr) {
+      console.warn("[WebPush] Error preparing splitter notification:", pushErr);
+    }
 
     return NextResponse.json({
       success: true,

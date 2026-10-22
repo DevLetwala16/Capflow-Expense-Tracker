@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { db, Transaction } from "@/lib/db";
 import { convertCurrency, useExchangeRateStore } from "@/lib/currency/exchangeRates";
 import { useSettingsStore } from "@/lib/store/settingsStore";
+import { notifyTransactionLogged } from "@/lib/notifications/notificationEngine";
 
 function getMonthRange(month: string) {
   const [year, mon] = month.split("-");
@@ -179,6 +180,15 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             100
         ) / 100,
     }));
+
+    if (typeof window !== "undefined") {
+      notifyTransactionLogged({
+        type: txData.type,
+        amount: txData.amount,
+        title: txData.title,
+        currency: txData.currency || defaultCurrency,
+      }).catch(() => {});
+    }
   },
 
   updateTransaction: async (id: number, updates: Partial<Transaction>) => {

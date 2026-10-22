@@ -4,6 +4,7 @@ import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
 import { sendEMIReminder } from "@/lib/email/mailer";
+import { sendWebPushToUsers } from "@/lib/notifications/webPushServer";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +100,18 @@ async function handleEmiReminders(req: NextRequest): Promise<NextResponse> {
             dueDate,
           );
           remindersSent++;
+
+          // Also dispatch background Web Push to user device (works when app is closed)
+          sendWebPushToUsers({
+            emails: [user.email],
+            userIds: [String(user._id)],
+            payload: {
+              title: isDueDay ? `💳 EMI Due Today: ${emi.name}` : `🔔 EMI Due Soon: ${emi.name}`,
+              body: `Your EMI of ₹${emi.monthlyCost} is ${isDueDay ? "due today" : `due on ${dueDate}`}. Tap to review in CapFlow.`,
+              tag: `emi-${emi._id}-${today.getDate()}`,
+              data: { url: "/emis" },
+            },
+          }).catch((err) => console.warn("[cron/emi-reminders] WebPush error:", err));
           console.info(
             `[cron/emi-reminders] Sent reminder for "${emi.name}" → ${user.email}`,
           );
