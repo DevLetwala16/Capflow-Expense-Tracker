@@ -31,6 +31,8 @@ import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useBudgetStore } from "@/lib/store/budgetStore";
 import { useEMIStore } from "@/lib/store/emiStore";
+import { decodeQRCodeFromVideo, decodeQRCodeFromFile } from "@/lib/splitter/qrScanner";
+import { generateQRCodeSVG } from "@/lib/splitter/qrGenerator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -187,6 +189,7 @@ export default function TransferPage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -204,14 +207,34 @@ export default function TransferPage() {
       scanIntervalRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch {}
+      });
       streamRef.current = null;
     }
     if (videoRef.current) {
-      videoRef.current.srcObject = null;
+      try {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {}
     }
     setIsScanning(false);
   }, []);
+
+  // Ensure stream binds to video element once mounted
+  useEffect(() => {
+    if (isScanning && streamRef.current && videoRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.muted = true;
+        videoRef.current.play().catch(() => {});
+      }
+    }
+  }, [isScanning]);
 
   useEffect(() => {
     return () => {
@@ -438,6 +461,7 @@ export default function TransferPage() {
   const startCamera = async (targetMode: "environment" | "user" = facingMode) => {
     setCameraError(null);
     stopCamera();
+    await new Promise((res) => setTimeout(res, 120));
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -464,48 +488,56 @@ export default function TransferPage() {
       }
 
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
       setIsScanning(true);
 
-      // BarcodeDetector loop
-      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
-        scanIntervalRef.current = setInterval(async () => {
-          if (videoRef.current && videoRef.current.readyState >= 2) {
-            try {
-              const barcodes = await detector.detect(videoRef.current);
-              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-                const detected = cleanToken(barcodes[0].rawValue);
-                if (detected) {
-                  stopCamera();
-                  setTokenInput(detected);
-                  showToast("QR code detected!", "success");
-                  if (typeof navigator !== "undefined" && navigator.vibrate) {
-                    navigator.vibrate(100);
-                  }
-                  handleRestore(detected);
-                }
-              }
-            } catch {
-              // Frame dropped or not ready
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.setAttribute("webkit-playsinline", "true");
+        videoRef.current.muted = true;
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            if (videoRef.current) {
+              videoRef.current.onloadedmetadata = () => {
+                videoRef.current?.play().catch(() => {});
+              };
             }
-          }
-        }, 300);
-      } else {
-        setCameraError(
-          "Real-time video barcode detection is not supported in this browser. Please use 'Upload QR Photo' or enter the token manually."
-        );
+          });
+        }
       }
-    } catch (err) {
-      console.error(err);
+
+      // Universal scanner loop: native BarcodeDetector hardware acceleration with automatic jsQR fallback
+      scanIntervalRef.current = setInterval(async () => {
+        if (videoRef.current && videoRef.current.readyState >= 2 && videoRef.current.videoWidth > 0) {
+          try {
+            const rawQR = await decodeQRCodeFromVideo(
+              videoRef.current,
+              canvasRef.current || undefined
+            );
+            if (rawQR) {
+              const detected = cleanToken(rawQR);
+              if (detected) {
+                stopCamera();
+                setTokenInput(detected);
+                showToast("QR code detected!", "success");
+                if (typeof navigator !== "undefined" && navigator.vibrate) {
+                  try {
+                    navigator.vibrate(100);
+                  } catch {}
+                }
+                handleRestore(detected);
+              }
+            }
+          } catch {
+            // Frame dropped or busy
+          }
+        }
+      }, 250);
+    } catch (err: any) {
+      console.error("[Migration Scanner] Camera error:", err);
       setCameraError(
-        err instanceof Error
-          ? err.message
-          : "Unable to access camera. Please allow camera permissions or enter the token manually."
+        err?.message || "Unable to access camera. Please allow camera permissions or enter the token manually."
       );
       setIsScanning(false);
     }
@@ -525,18 +557,13 @@ export default function TransferPage() {
     if (!file) return;
 
     try {
-      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
-        const bitmap = await createImageBitmap(file);
-        const barcodes = await detector.detect(bitmap);
-        if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-          const detected = cleanToken(barcodes[0].rawValue);
-          setTokenInput(detected);
-          showToast("QR code detected from photo!", "success");
-          handleRestore(detected);
-          return;
-        }
+      const rawCode = await decodeQRCodeFromFile(file);
+      if (rawCode) {
+        const detected = cleanToken(rawCode);
+        setTokenInput(detected);
+        showToast("QR code detected from photo!", "success");
+        handleRestore(detected);
+        return;
       }
       showToast(
         "No QR code found in selected photo. Please try another image or enter the token manually.",
@@ -552,8 +579,8 @@ export default function TransferPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const qrUrl = token
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(token.tokenId)}`
+  const qrSvg = token
+    ? generateQRCodeSVG(token.tokenId, { size: 180, margin: 4 })
     : null;
 
   return (
@@ -706,14 +733,16 @@ export default function TransferPage() {
                         <div className={`p-3 rounded-2xl bg-white shadow-md inline-block ${
                           tokenExpired || tokenConsumed ? "opacity-25 grayscale pointer-events-none" : ""
                         }`}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={qrUrl!}
-                            alt="Transfer QR Code"
-                            width={180}
-                            height={180}
-                            className="rounded-lg"
-                          />
+                          {qrSvg ? (
+                            <div
+                              dangerouslySetInnerHTML={{ __html: qrSvg }}
+                              className="w-[180px] h-[180px] flex items-center justify-center rounded-lg overflow-hidden"
+                            />
+                          ) : (
+                            <div className="w-[180px] h-[180px] flex items-center justify-center bg-slate-100 rounded-lg text-slate-400 text-xs">
+                              Generating QR...
+                            </div>
+                          )}
                         </div>
 
                         {/* Countdown */}
@@ -806,62 +835,60 @@ export default function TransferPage() {
                     )}
                   </div>
 
-                  {/* Active Camera Viewport */}
-                  <AnimatePresence>
-                    {isScanning ? (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="relative rounded-2xl overflow-hidden bg-black aspect-[4/3] flex items-center justify-center border border-[var(--border-color)] shadow-inner"
-                      >
-                        <video
-                          ref={videoRef}
-                          playsInline
-                          autoPlay
-                          muted
-                          className="w-full h-full object-cover"
+                  {/* Hidden canvas for image decoding */}
+                  <canvas ref={canvasRef} className="hidden" />
+
+                  {/* Active Camera Viewport: Video is ALWAYS in DOM so videoRef is never null */}
+                  <div
+                    className={`relative rounded-2xl overflow-hidden bg-black aspect-[4/3] flex items-center justify-center border border-[var(--border-color)] shadow-inner transition-all duration-300 ${
+                      isScanning ? "block" : "hidden"
+                    }`}
+                  >
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      autoPlay
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+
+                    {/* Viewfinder Overlay */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      <div className="w-48 h-48 border-2 border-[#6366F1] rounded-2xl relative shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+                        {/* Scanning Laser */}
+                        <motion.div
+                          animate={{ top: ["5%", "90%", "5%"] }}
+                          transition={{ repeat: Infinity, duration: 2.2, ease: "linear" }}
+                          className="absolute left-1 right-1 h-0.5 bg-gradient-to-r from-transparent via-[#38bdf8] to-transparent shadow-[0_0_8px_rgba(56,189,248,0.9)]"
                         />
+                        {/* Reticle Corners */}
+                        <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white" />
+                        <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white" />
+                        <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white" />
+                        <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white" />
+                      </div>
+                    </div>
 
-                        {/* Viewfinder Overlay */}
-                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                          <div className="w-48 h-48 border-2 border-[#6366F1] rounded-2xl relative shadow-[0_0_15px_rgba(99,102,241,0.5)]">
-                            {/* Scanning Laser */}
-                            <motion.div
-                              animate={{ top: ["5%", "90%", "5%"] }}
-                              transition={{ repeat: Infinity, duration: 2.2, ease: "linear" }}
-                              className="absolute left-1 right-1 h-0.5 bg-gradient-to-r from-transparent via-[#38bdf8] to-transparent shadow-[0_0_8px_rgba(56,189,248,0.9)]"
-                            />
-                            {/* Reticle Corners */}
-                            <span className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-white" />
-                            <span className="absolute -top-1 -right-1 w-3 h-3 border-t-2 border-r-2 border-white" />
-                            <span className="absolute -bottom-1 -left-1 w-3 h-3 border-b-2 border-l-2 border-white" />
-                            <span className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-white" />
-                          </div>
-                        </div>
-
-                        {/* Camera Floating Controls */}
-                        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 z-10">
-                          <button
-                            type="button"
-                            onClick={handleToggleFacingMode}
-                            className="px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors border border-white/20 flex items-center gap-1.5"
-                          >
-                            <RefreshCw size={13} />
-                            Flip Camera
-                          </button>
-                          <button
-                            type="button"
-                            onClick={stopCamera}
-                            className="px-3 py-1.5 rounded-xl bg-[#EF4444] text-white text-xs font-semibold hover:bg-[#DC2626] transition-colors flex items-center gap-1.5 shadow-md"
-                          >
-                            <CameraOff size={13} />
-                            Close Scanner
-                          </button>
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
+                    {/* Camera Floating Controls */}
+                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 z-10">
+                      <button
+                        type="button"
+                        onClick={handleToggleFacingMode}
+                        className="px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-xs font-semibold hover:bg-black/80 transition-colors border border-white/20 flex items-center gap-1.5"
+                      >
+                        <RefreshCw size={13} />
+                        Flip Camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-3 py-1.5 rounded-xl bg-[#EF4444] text-white text-xs font-semibold hover:bg-[#DC2626] transition-colors flex items-center gap-1.5 shadow-md"
+                      >
+                        <CameraOff size={13} />
+                        Close Scanner
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Camera Error Message */}
                   {cameraError && (

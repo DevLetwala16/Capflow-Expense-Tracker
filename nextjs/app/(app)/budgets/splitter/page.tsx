@@ -28,6 +28,7 @@ import { DeleteSessionModal } from "@/components/splitter/DeleteSessionModal";
 import { formatSplitCurrency } from "@/lib/splitter/debtEngine";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
 import { SplitSession } from "@/types/splitter";
+import { notifySplitSessionCreated } from "@/lib/notifications/notificationEngine";
 
 export default function SplitterSessionsHub() {
   const router = useRouter();
@@ -335,6 +336,11 @@ export default function SplitterSessionsHub() {
             user?.id || "guest_user",
             user?.name || "Organizer"
           );
+          notifySplitSessionCreated({
+            sessionName: created.name,
+            sessionId: created.sessionId,
+            creatorName: user?.name || "You",
+          }).catch(() => {});
           router.push(`/budgets/splitter/${created.sessionId}`);
         }}
       />

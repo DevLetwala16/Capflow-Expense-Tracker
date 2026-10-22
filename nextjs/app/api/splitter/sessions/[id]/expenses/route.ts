@@ -162,9 +162,11 @@ export async function POST(
     };
     session.auditLogs.unshift(auditLog);
 
+    session.markModified('expenses');
+    session.markModified('auditLogs');
     await session.save();
 
-    // Notify group members in the background (even if app is closed!)
+    // Notify all connected group members in the background (even if app is closed!)
     try {
       const otherMembers = (session.members || []).filter(
         (m: any) => m.id !== newExpense.createdBy.memberId
@@ -176,12 +178,21 @@ export async function POST(
         .map((m: any) => m.userId)
         .filter(Boolean) as string[];
 
+      // Ensure session creator also receives alert if someone else logged the expense
+      if (
+        session.userId &&
+        session.userId !== newExpense.createdBy.memberId &&
+        !recipientUserIds.includes(session.userId)
+      ) {
+        recipientUserIds.push(session.userId);
+      }
+
       if (recipientEmails.length > 0 || recipientUserIds.length > 0) {
         sendWebPushToUsers({
           emails: recipientEmails,
           userIds: recipientUserIds,
           payload: {
-            title: `💸 New Split: ${session.name}`,
+            title: `💸 Itemized Expense: ${session.name}`,
             body: `${newExpense.createdBy.name} added "${newExpense.title}" for ${session.currency} ${newExpense.amount}. Tap to view breakdown!`,
             tag: `split-exp-${newExpense.id}`,
             data: { url: `/budgets/splitter/${session.sessionId}` },

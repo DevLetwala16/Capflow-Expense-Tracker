@@ -44,6 +44,8 @@ export async function DELETE(
     };
     session.auditLogs.unshift(auditLog);
 
+    session.markModified('expenses');
+    session.markModified('auditLogs');
     await session.save();
 
     return NextResponse.json({ success: true, session });
@@ -96,6 +98,7 @@ export async function PATCH(
     currentExp.updatedAt = new Date().toISOString();
 
     session.expenses[expIndex] = currentExp;
+    session.markModified('expenses');
     await session.save();
 
     return NextResponse.json({ success: true, expense: currentExp, session });

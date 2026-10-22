@@ -412,21 +412,105 @@ export interface ExpenseMemberStatus {
   shareAmount: number;
 }
 
+/**
+ * Calculates net debt that debtor owes to creditor across the whole session.
+ * Positive (> 0): debtor owes creditor.
+ * Zero or negative (<= 0): debtor owes nothing to creditor (mutual expenses or settlements offset).
+ */
+export function getPairwiseNetDebt(
+  session: SplitSession,
+  debtorId: string,
+  creditorId: string
+): number {
+  if (!session || debtorId === creditorId) return 0;
+  const memberMap = new Map((session.members || []).map((m) => [m.id, m]));
+
+  const resolvePrimary = (id: string): string => {
+    const m = memberMap.get(id);
+    return m?.isDependent && m.primaryPayerMemberId ? m.primaryPayerMemberId : id;
+  };
+
+  const dId = resolvePrimary(debtorId);
+  const cId = resolvePrimary(creditorId);
+  if (dId === cId) return 0;
+
+  let balanceCents = 0; // Positive: dId owes cId. Negative: cId owes dId.
+
+  // 1. Scan expenses
+  for (const exp of session.expenses || []) {
+    const totalExpCents = toCents(exp.amount);
+    if (totalExpCents <= 0) continue;
+
+    // Total cents paid by creditor for this expense
+    const cPaidCents = (exp.paidBy || []).reduce((sum, p) => {
+      return resolvePrimary(p.memberId) === cId ? sum + toCents(p.amount) : sum;
+    }, 0);
+
+    // Total cents paid by debtor for this expense
+    const dPaidCents = (exp.paidBy || []).reduce((sum, p) => {
+      return resolvePrimary(p.memberId) === dId ? sum + toCents(p.amount) : sum;
+    }, 0);
+
+    // Debtor's allocated share cents
+    const dSplitCents = (exp.splits || []).reduce((sum, s) => {
+      return resolvePrimary(s.memberId) === dId ? sum + toCents(s.amount) : sum;
+    }, 0);
+
+    // Creditor's allocated share cents
+    const cSplitCents = (exp.splits || []).reduce((sum, s) => {
+      return resolvePrimary(s.memberId) === cId ? sum + toCents(s.amount) : sum;
+    }, 0);
+
+    // How much of debtor's share was funded by creditor?
+    if (cPaidCents > 0 && dSplitCents > 0) {
+      const debtToC = Math.round((dSplitCents * cPaidCents) / totalExpCents);
+      balanceCents += debtToC;
+    }
+
+    // How much of creditor's share was funded by debtor?
+    if (dPaidCents > 0 && cSplitCents > 0) {
+      const debtToD = Math.round((cSplitCents * dPaidCents) / totalExpCents);
+      balanceCents -= debtToD;
+    }
+  }
+
+  // 2. Scan settlements
+  for (const st of session.settlements || []) {
+    const fromId = resolvePrimary(st.fromMemberId);
+    const toId = resolvePrimary(st.toMemberId);
+    const stCents = toCents(st.amount);
+
+    if (fromId === dId && toId === cId) {
+      // Debtor paid creditor
+      balanceCents -= stCents;
+    } else if (fromId === cId && toId === dId) {
+      // Creditor paid debtor
+      balanceCents += stCents;
+    }
+  }
+
+  return fromCents(balanceCents);
+}
+
 export function getExpenseMemberStatus(
   exp: SplitExpenseItem,
   m: SplitMember,
-  members: SplitMember[]
+  sessionOrMembers: SplitSession | SplitMember[]
 ): ExpenseMemberStatus {
+  const isSession = !Array.isArray(sessionOrMembers) && typeof sessionOrMembers === 'object' && 'expenses' in sessionOrMembers;
+  const session = isSession ? (sessionOrMembers as SplitSession) : null;
+  const members = session ? session.members : (sessionOrMembers as SplitMember[]);
+
   const split = exp.splits?.find((s) => s.memberId === m.id);
   const shareAmount = split?.amount || 0;
 
-  // Did this member pay towards the bill?
+  // 1. Did this member pay towards the bill upfront?
   const memberPaid = exp.paidBy?.reduce(
     (sum, p) => (p.memberId === m.id ? sum + p.amount : sum),
     0
   ) || 0;
 
-  // Check dependent liability routing
+  // 2. Check dependent liability routing
   if (m.isDependent && m.primaryPayerMemberId) {
     const primaryPayer = members.find((x) => x.id === m.primaryPayerMemberId);
     const primaryPaid = exp.paidBy?.reduce(
@@ -449,7 +533,7 @@ export function getExpenseMemberStatus(
     }
   }
 
-  // If member paid upfront at least their share:
+  // 3. If member paid upfront at least their share:
   if (memberPaid >= shareAmount && shareAmount > 0) {
     return {
       status: 'paid',
@@ -462,7 +546,7 @@ export function getExpenseMemberStatus(
     };
   }
 
-  // If split is explicitly marked as settled
+  // 4. If split is explicitly marked as settled
   if (split?.settled) {
     return {
       status: 'settled',
@@ -475,7 +559,28 @@ export function getExpenseMemberStatus(
     };
   }
 
-  // If pending
+  // 5. Automatic Netting Check:
+  // If member and the primary payer have offset mutual expenses or direct settlements,
+  // their pairwise net debt is 0, so this expense share is automatically settled!
+  const primaryPayerId = exp.paidBy?.[0]?.memberId;
+  const debtorEffectiveId = m.isDependent && m.primaryPayerMemberId ? m.primaryPayerMemberId : m.id;
+
+  if (session && primaryPayerId && debtorEffectiveId !== primaryPayerId) {
+    const pairwiseDebt = getPairwiseNetDebt(session, debtorEffectiveId, primaryPayerId);
+    if (pairwiseDebt <= 0.009) {
+      return {
+        status: 'settled',
+        label: 'Auto-Adjusted ✓',
+        badgeClass: 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30',
+        isPayer: false,
+        canMarkSettled: false,
+        canUndo: false,
+        shareAmount,
+      };
+    }
+  }
+
+  // 6. If pending payment
   return {
     status: 'pending',
     label: 'Pending',
@@ -496,6 +601,7 @@ export interface ItemizedExpenseBreakdown {
   currency: string;
   shareAmount: number;
   settled: boolean;
+  settledLabel?: string;
   settledAt?: string;
   payerName: string;
   isDirectPayer: boolean;
@@ -524,6 +630,10 @@ export function getItemizedExpensesForPair(
     });
 
     if (toPaidEntry && fromSplit) {
+      const fromMember = memberMap.get(fromMemberId);
+      const statusInfo = fromMember ? getExpenseMemberStatus(exp, fromMember, session) : null;
+      const isSettled = statusInfo?.status === 'settled' || statusInfo?.status === 'paid' || !!fromSplit.settled;
+
       result.push({
         expenseId: exp.id,
         title: exp.title,
@@ -532,7 +642,8 @@ export function getItemizedExpensesForPair(
         totalAmount: exp.amount,
         currency: exp.currency,
         shareAmount: fromSplit.amount,
-        settled: !!fromSplit.settled,
+        settled: isSettled,
+        settledLabel: statusInfo?.label || (isSettled ? 'Settled ✓' : 'Pending'),
         settledAt: fromSplit.settledAt,
         payerName: memberMap.get(toMemberId)?.name || 'Payer',
         isDirectPayer: false,
@@ -548,6 +659,10 @@ export function getItemizedExpensesForPair(
     });
 
     if (fromPaidEntry && toSplit) {
+      const toMember = memberMap.get(toMemberId);
+      const statusInfo = toMember ? getExpenseMemberStatus(exp, toMember, session) : null;
+      const isSettled = statusInfo?.status === 'settled' || statusInfo?.status === 'paid' || !!toSplit.settled;
+
       result.push({
         expenseId: exp.id,
         title: exp.title,
@@ -556,7 +671,8 @@ export function getItemizedExpensesForPair(
         totalAmount: exp.amount,
         currency: exp.currency,
         shareAmount: toSplit.amount,
-        settled: !!toSplit.settled,
+        settled: isSettled,
+        settledLabel: statusInfo?.label || (isSettled ? 'Settled ✓' : 'Pending'),
         settledAt: toSplit.settledAt,
         payerName: memberMap.get(fromMemberId)?.name || 'Payer',
         isDirectPayer: true,
@@ -606,5 +722,278 @@ export function formatPDFCurrency(amount: number, currency: string = 'INR'): str
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+export interface AutoAdjustedDebtHistory {
+  id: string;
+  type: 'auto_adjustment';
+  memberA: {
+    id: string;
+    name: string;
+    color: string;
+    grossPaidForB: number;
+    expenseCount: number;
+  };
+  memberB: {
+    id: string;
+    name: string;
+    color: string;
+    grossPaidForA: number;
+    expenseCount: number;
+  };
+  adjustedAmount: number;
+  currency: string;
+  isFullySettled: boolean;
+  remainingNetDebt?: {
+    debtorName: string;
+    creditorName: string;
+    amount: number;
+  };
+  offsetExpenses: {
+    expenseId: string;
+    title: string;
+    date: string;
+    payerId: string;
+    payerName: string;
+    beneficiaryId: string;
+    beneficiaryName: string;
+    shareAmount: number;
+  }[];
+  latestDate: string;
+}
+
+export interface PaidSettlementHistory {
+  id: string;
+  type: 'marked_paid';
+  settlementId: string;
+  fromMemberId: string;
+  fromMemberName: string;
+  fromMemberColor?: string;
+  toMemberId: string;
+  toMemberName: string;
+  toMemberColor?: string;
+  amount: number;
+  currency: string;
+  date: string;
+  notes?: string;
+  relatedExpenseId?: string;
+  relatedExpenseTitle?: string;
+}
+
+export type SettlementRoadmapHistoryItem = AutoAdjustedDebtHistory | PaidSettlementHistory;
+
+/**
+ * Computes all mutual debt adjustments (automatic offsets) between pairs of members.
+ * When Member A paid for Member B in one expense, and Member B paid for Member A in another,
+ * their shared expenses automatically adjust/cancel each other out without any cash transfer needed.
+ */
+export function calculateMutualAdjustments(session: SplitSession): AutoAdjustedDebtHistory[] {
+  if (!session || !session.members || !session.expenses) return [];
+  const members = session.members;
+  const memberMap = new Map(members.map((m) => [m.id, m]));
+
+  const resolvePrimary = (id: string): string => {
+    const m = memberMap.get(id);
+    return m?.isDependent && m.primaryPayerMemberId ? m.primaryPayerMemberId : id;
+  };
+
+  const primaryMemberIds = Array.from(
+    new Set(members.map((m) => resolvePrimary(m.id)))
+  );
+
+  if (primaryMemberIds.length < 2) return [];
+
+  interface DirectedExpenseShare {
+    expenseId: string;
+    title: string;
+    date: string;
+    payerId: string;
+    payerName: string;
+    beneficiaryId: string;
+    beneficiaryName: string;
+    shareCents: number;
+  }
+
+  const directedDebts = new Map<string, { totalCents: number; items: DirectedExpenseShare[] }>();
+
+  for (const exp of session.expenses) {
+    const totalExpCents = toCents(exp.amount);
+    if (totalExpCents <= 0) continue;
+
+    for (const p of exp.paidBy || []) {
+      const payerPrimaryId = resolvePrimary(p.memberId);
+      const payerPaidCents = toCents(p.amount);
+      if (payerPaidCents <= 0) continue;
+
+      for (const s of exp.splits || []) {
+        const benPrimaryId = resolvePrimary(s.memberId);
+        const benShareCents = toCents(s.amount);
+        if (benShareCents <= 0 || payerPrimaryId === benPrimaryId) continue;
+
+        const fundedCents = Math.round((benShareCents * payerPaidCents) / totalExpCents);
+        if (fundedCents <= 0) continue;
+
+        const key = `${payerPrimaryId}->${benPrimaryId}`;
+        const existing = directedDebts.get(key) || { totalCents: 0, items: [] };
+        existing.totalCents += fundedCents;
+        existing.items.push({
+          expenseId: exp.id,
+          title: exp.title,
+          date: exp.date,
+          payerId: payerPrimaryId,
+          payerName: memberMap.get(payerPrimaryId)?.name || 'Payer',
+          beneficiaryId: benPrimaryId,
+          beneficiaryName: memberMap.get(benPrimaryId)?.name || 'Member',
+          shareCents: fundedCents,
+        });
+        directedDebts.set(key, existing);
+      }
+    }
+  }
+
+  // Account for direct cash settlements between pairs
+  const settlementCentsMap = new Map<string, number>();
+  for (const st of session.settlements || []) {
+    const fromPrimary = resolvePrimary(st.fromMemberId);
+    const toPrimary = resolvePrimary(st.toMemberId);
+    const key = `${fromPrimary}->${toPrimary}`;
+    settlementCentsMap.set(key, (settlementCentsMap.get(key) || 0) + toCents(st.amount));
+  }
+
+  const results: AutoAdjustedDebtHistory[] = [];
+
+  for (let i = 0; i < primaryMemberIds.length; i++) {
+    for (let j = i + 1; j < primaryMemberIds.length; j++) {
+      const idA = primaryMemberIds[i];
+      const idB = primaryMemberIds[j];
+
+      // A paid for B
+      const debtBtoA = directedDebts.get(`${idA}->${idB}`);
+      const grossBtoACents = debtBtoA?.totalCents || 0;
+      const stBtoACents = settlementCentsMap.get(`${idB}->${idA}`) || 0;
+      const effBtoACents = Math.max(0, grossBtoACents - stBtoACents);
+
+      // B paid for A
+      const debtAtoB = directedDebts.get(`${idB}->${idA}`);
+      const grossAtoBCents = debtAtoB?.totalCents || 0;
+      const stAtoBCents = settlementCentsMap.get(`${idA}->${idB}`) || 0;
+      const effAtoBCents = Math.max(0, grossAtoBCents - stAtoBCents);
+
+      // Mutual offset is the minimum of what they effectively owed each other from shared expenses
+      const autoAdjustCents = Math.min(effBtoACents, effAtoBCents);
+
+      if (autoAdjustCents > 0) {
+        const memA = memberMap.get(idA);
+        const memB = memberMap.get(idB);
+        if (!memA || !memB) continue;
+
+        const offsetItems = [...(debtBtoA?.items || []), ...(debtAtoB?.items || [])].map((item) => ({
+          expenseId: item.expenseId,
+          title: item.title,
+          date: item.date,
+          payerId: item.payerId,
+          payerName: item.payerName,
+          beneficiaryId: item.beneficiaryId,
+          beneficiaryName: item.beneficiaryName,
+          shareAmount: fromCents(item.shareCents),
+        }));
+
+        let latestDate = session.createdAt || new Date().toISOString();
+        offsetItems.forEach((item) => {
+          if (!latestDate || new Date(item.date).getTime() > new Date(latestDate).getTime()) {
+            latestDate = item.date;
+          }
+        });
+
+        const netRemainingCents = effBtoACents - effAtoBCents;
+        let remainingNetDebt: { debtorName: string; creditorName: string; amount: number } | undefined;
+        if (netRemainingCents > 0) {
+          remainingNetDebt = {
+            debtorName: memB.name,
+            creditorName: memA.name,
+            amount: fromCents(netRemainingCents),
+          };
+        } else if (netRemainingCents < 0) {
+          remainingNetDebt = {
+            debtorName: memA.name,
+            creditorName: memB.name,
+            amount: fromCents(-netRemainingCents),
+          };
+        }
+
+        results.push({
+          id: `auto-adj-${idA}-${idB}`,
+          type: 'auto_adjustment',
+          memberA: {
+            id: idA,
+            name: memA.name,
+            color: memA.color,
+            grossPaidForB: fromCents(grossBtoACents),
+            expenseCount: debtBtoA?.items.length || 0,
+          },
+          memberB: {
+            id: idB,
+            name: memB.name,
+            color: memB.color,
+            grossPaidForA: fromCents(grossAtoBCents),
+            expenseCount: debtAtoB?.items.length || 0,
+          },
+          adjustedAmount: fromCents(autoAdjustCents),
+          currency: session.currency || 'INR',
+          isFullySettled: Math.abs(netRemainingCents) === 0,
+          remainingNetDebt,
+          offsetExpenses: offsetItems,
+          latestDate,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Returns the unified Settlement Roadmap history, combining:
+ * 1. Explicit payments marked as paid (SplitSettlement records).
+ * 2. Automatic mutual adjustments where a user payment was automatically offset by another person's payment.
+ */
+export function getSettlementRoadmapHistory(session: SplitSession): SettlementRoadmapHistoryItem[] {
+  if (!session) return [];
+  const memberMap = new Map((session.members || []).map((m) => [m.id, m]));
+  const expenseMap = new Map((session.expenses || []).map((e) => [e.id, e]));
+
+  const paidHistory: PaidSettlementHistory[] = (session.settlements || []).map((st) => {
+    const fromMember = memberMap.get(st.fromMemberId);
+    const toMember = memberMap.get(st.toMemberId);
+    const relExp = st.expenseId ? expenseMap.get(st.expenseId) : undefined;
+
+    return {
+      id: `paid-${st.id}`,
+      type: 'marked_paid',
+      settlementId: st.id,
+      fromMemberId: st.fromMemberId,
+      fromMemberName: fromMember?.name || 'Member',
+      fromMemberColor: fromMember?.color,
+      toMemberId: st.toMemberId,
+      toMemberName: toMember?.name || 'Member',
+      toMemberColor: toMember?.color,
+      amount: st.amount,
+      currency: (st as any).currency || session.currency || 'INR',
+      date: st.date || (st as any).createdAt || new Date().toISOString(),
+      notes: st.notes,
+      relatedExpenseId: st.expenseId,
+      relatedExpenseTitle: relExp?.title,
+    };
+  });
+
+  const autoAdjustedHistory = calculateMutualAdjustments(session);
+
+  const combined: SettlementRoadmapHistoryItem[] = [...paidHistory, ...autoAdjustedHistory];
+
+  return combined.sort((a, b) => {
+    const dateA = a.type === 'marked_paid' ? a.date : a.latestDate;
+    const dateB = b.type === 'marked_paid' ? b.date : b.latestDate;
+    return new Date(dateB).getTime() - new Date(dateA).getTime();
+  });
 }
 

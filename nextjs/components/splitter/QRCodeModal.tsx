@@ -28,7 +28,7 @@ export function QRCodeModal({
     size: 220,
     color: "#0F172A",
     bgColor: "#FFFFFF",
-    margin: 2,
+    margin: 4,
   });
 
   const handleCopyId = async () => {

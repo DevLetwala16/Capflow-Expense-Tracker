@@ -4,6 +4,7 @@ import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
 import { generateSessionId } from '@/lib/splitter/debtEngine';
 import { SplitMember, SplitAuditLog } from '@/types/splitter';
+import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -138,6 +139,34 @@ export async function POST(req: NextRequest) {
       settlements: [],
       auditLogs: [initialAuditLog],
     });
+
+    // Notify connected members of the newly created split session in the background
+    try {
+      const otherMembers = sanitizedMembers.filter(
+        (m) => m.userId !== userId && (m.email || m.userId)
+      );
+      const recipientEmails = otherMembers
+        .map((m) => m.email)
+        .filter(Boolean) as string[];
+      const recipientUserIds = otherMembers
+        .map((m) => m.userId)
+        .filter(Boolean) as string[];
+
+      if (recipientEmails.length > 0 || recipientUserIds.length > 0) {
+        sendWebPushToUsers({
+          emails: recipientEmails,
+          userIds: recipientUserIds,
+          payload: {
+            title: `👥 Added to Split Group: ${name}`,
+            body: `${creatorName} created "${name}" (ID: ${sessionId}). Tap to view expenses and track balances!`,
+            tag: `split-created-${sessionId}`,
+            data: { url: `/budgets/splitter/${sessionId}` },
+          },
+        }).catch((err) => console.warn('[WebPush] Session creation push error:', err));
+      }
+    } catch (pushErr) {
+      console.warn('[WebPush] Error preparing session creation notification:', pushErr);
+    }
 
     return NextResponse.json({ session: newSession }, { status: 201 });
   } catch (error: any) {

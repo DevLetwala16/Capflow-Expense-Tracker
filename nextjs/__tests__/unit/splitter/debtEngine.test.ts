@@ -9,6 +9,8 @@ import {
   generateSessionId,
   getExpenseMemberStatus,
   getItemizedExpensesForPair,
+  calculateMutualAdjustments,
+  getSettlementRoadmapHistory,
 } from '@/lib/splitter/debtEngine';
 import { SplitSession } from '@/types/splitter';
 
@@ -339,5 +341,154 @@ describe('Splitter Debt Engine', () => {
     expect(breakdown[0].title).toBe('Lunch');
     expect(breakdown[0].shareAmount).toBe(100);
     expect(breakdown[0].settled).toBe(false);
+  });
+
+  test('mutual expenses offset cancels debt from roadmap and marks itemized expenses as settled', () => {
+    // Exact user scenario:
+    // A pays 150 on Day 1 for A, B, C (50 each)
+    // B pays 150 on Day 2 for A, B, C (50 each)
+    const members = [
+      { id: 'm1', name: 'User A', handle: '@a', color: '#10B981', isDependent: false },
+      { id: 'm2', name: 'Friend B', handle: '@b', color: '#6366F1', isDependent: false },
+      { id: 'm3', name: 'Person C', handle: '@c', color: '#F59E0B', isDependent: false },
+    ];
+
+    const exp1 = {
+      id: 'e1',
+      sessionId: 'CAP@test',
+      title: 'Day 1 Bill',
+      amount: 150,
+      currency: 'INR',
+      category: 'Food',
+      date: '2026-10-01',
+      createdBy: { memberId: 'm1', name: 'User A' },
+      paidBy: [{ memberId: 'm1', amount: 150 }],
+      splitMode: 'equal' as const,
+      splits: [
+        { memberId: 'm1', amount: 50 },
+        { memberId: 'm2', amount: 50 },
+        { memberId: 'm3', amount: 50 },
+      ],
+      createdAt: '2026-10-01',
+      updatedAt: '2026-10-01',
+    };
+
+    const exp2 = {
+      id: 'e2',
+      sessionId: 'CAP@test',
+      title: 'Day 2 Bill',
+      amount: 150,
+      currency: 'INR',
+      category: 'Food',
+      date: '2026-10-02',
+      createdBy: { memberId: 'm2', name: 'Friend B' },
+      paidBy: [{ memberId: 'm2', amount: 150 }],
+      splitMode: 'equal' as const,
+      splits: [
+        { memberId: 'm1', amount: 50 },
+        { memberId: 'm2', amount: 50 },
+        { memberId: 'm3', amount: 50 },
+      ],
+      createdAt: '2026-10-02',
+      updatedAt: '2026-10-02',
+    };
+
+    const session: SplitSession = {
+      sessionId: 'CAP@test',
+      userId: 'u1',
+      name: 'Group Trip',
+      template: 'group',
+      startDate: '2026-10-01',
+      endDate: '2026-10-05',
+      currency: 'INR',
+      status: 'active',
+      members,
+      expenses: [exp1, exp2],
+      settlements: [],
+      auditLogs: [],
+      createdAt: '2026-10-01',
+      updatedAt: '2026-10-02',
+    };
+
+    // Net positions & Settlement Roadmap check
+    const positions = calculateMemberNetPositions(session);
+    const roadmap = simplifyDebts(positions);
+
+    // In the settlement roadmap, User A and Friend B are mutually offset:
+    // Neither A pays B, nor B pays A!
+    const abTransaction = roadmap.find(
+      (t) => (t.fromMemberId === 'm1' && t.toMemberId === 'm2') ||
+             (t.fromMemberId === 'm2' && t.toMemberId === 'm1')
+    );
+    expect(abTransaction).toBeUndefined();
+
+    // Roadmap only requires C to pay A (50) and C to pay B (50)
+    expect(roadmap).toHaveLength(2);
+    expect(roadmap.some((t) => t.fromMemberId === 'm3' && t.toMemberId === 'm1' && t.amount === 50)).toBe(true);
+    expect(roadmap.some((t) => t.fromMemberId === 'm3' && t.toMemberId === 'm2' && t.amount === 50)).toBe(true);
+
+    // In Itemized Expenses:
+    // On exp1 (A paid):
+    // - User A: Paid (Payer)
+    // - Friend B: Settled (debt was offset by Day 2)
+    // - Person C: Pending
+    const exp1AStatus = getExpenseMemberStatus(exp1, members[0], session);
+    const exp1BStatus = getExpenseMemberStatus(exp1, members[1], session);
+    const exp1CStatus = getExpenseMemberStatus(exp1, members[2], session);
+
+    expect(exp1AStatus.status).toBe('paid');
+    expect(exp1BStatus.status).toBe('settled'); // Automatically settled because mutual debt offset!
+    expect(exp1BStatus.label).toBe('Auto-Adjusted ✓');
+    expect(exp1CStatus.status).toBe('pending');
+
+    // On exp2 (B paid):
+    // - Friend B: Paid (Payer)
+    // - User A: Settled (debt was offset by Day 1)
+    // - Person C: Pending
+    const exp2BStatus = getExpenseMemberStatus(exp2, members[1], session);
+    const exp2AStatus = getExpenseMemberStatus(exp2, members[0], session);
+    const exp2CStatus = getExpenseMemberStatus(exp2, members[2], session);
+
+    expect(exp2BStatus.status).toBe('paid');
+    expect(exp2AStatus.status).toBe('settled'); // Automatically settled because mutual debt offset!
+    expect(exp2AStatus.label).toBe('Auto-Adjusted ✓');
+    expect(exp2CStatus.status).toBe('pending');
+
+    // Verify mutual adjustments calculation
+    const mutualAdjustments = calculateMutualAdjustments(session);
+    expect(mutualAdjustments).toHaveLength(1);
+    expect(mutualAdjustments[0].adjustedAmount).toBe(50);
+    expect(mutualAdjustments[0].isFullySettled).toBe(true);
+    expect(mutualAdjustments[0].memberA.name).toBe('User A');
+    expect(mutualAdjustments[0].memberB.name).toBe('Friend B');
+
+    // Verify Settlement Roadmap History contains the auto-adjustment
+    const history = getSettlementRoadmapHistory(session);
+    expect(history).toHaveLength(1);
+    expect(history[0].type).toBe('auto_adjustment');
+
+    // When Person C pays User A via direct settlement
+    const sessionWithSettlement: SplitSession = {
+      ...session,
+      settlements: [
+        {
+          id: 'stl-1',
+          sessionId: session.sessionId,
+          fromMemberId: 'm3',
+          toMemberId: 'm1',
+          amount: 50,
+          date: '2026-10-03T10:00:00Z',
+          recordedBy: { memberId: 'm3', name: 'Person C' },
+          createdAt: '2026-10-03T10:00:00Z',
+        },
+      ],
+    };
+
+    const fullHistory = getSettlementRoadmapHistory(sessionWithSettlement);
+    expect(fullHistory).toHaveLength(2);
+    // Newest first
+    expect(fullHistory[0].type).toBe('marked_paid');
+    expect((fullHistory[0] as any).fromMemberName).toBe('Person C');
+    expect(fullHistory[1].type).toBe('auto_adjustment');
   });
 });

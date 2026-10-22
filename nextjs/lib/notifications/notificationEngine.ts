@@ -522,6 +522,28 @@ export async function notifyTransactionLogged({
 }
 
 /**
+ * Fires when a new Splitter session/group is created
+ */
+export async function notifySplitSessionCreated({
+  sessionName,
+  sessionId,
+  creatorName,
+}: {
+  sessionName: string;
+  sessionId: string;
+  creatorName: string;
+}) {
+  const notifTitle = `👥 New Split Session: ${sessionName}`;
+  const notifBody = `${creatorName} created "${sessionName}" (ID: ${sessionId}). Tap to view expenses and track balances!`;
+
+  await sendNativeNotification(notifTitle, {
+    body: notifBody,
+    tag: `split-created-${sessionId}`,
+    inAppType: "info",
+  });
+}
+
+/**
  * Fires when a split expense is added or logged in a Splitter group
  */
 export async function notifySplitExpenseLogged({
@@ -540,7 +562,7 @@ export async function notifySplitExpenseLogged({
   yourShare?: number;
 }) {
   const formattedTotal = `${currency}${amount.toLocaleString("en-IN")}`;
-  const notifTitle = `👥 Split Expense: ${sessionName}`;
+  const notifTitle = `👥 Itemized Expense: ${sessionName}`;
   const shareText = yourShare ? ` Your share: ${currency}${yourShare.toLocaleString("en-IN")}.` : "";
   const notifBody = `${payerName} added "${title}" for ${formattedTotal}.${shareText}`;
 

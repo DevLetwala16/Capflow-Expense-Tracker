@@ -72,6 +72,8 @@ interface SplitterState {
     }
   ) => Promise<SplitSettlement>;
 
+  deleteSettlement: (sessionId: string, settlementId: string) => Promise<void>;
+
   toggleSettleExpenseShare: (
     sessionId: string,
     expenseId: string,
@@ -744,11 +746,30 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
 
       // Remote sync
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settlement),
-        }).catch(async (err) => {
+        try {
+          const res = await fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settlement),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.session) {
+              lastKnownAuditLogId = data.session.auditLogs?.[0]?.id || null;
+              await db.splitSessions.where('sessionId').equals(sessionId).modify({
+                expenses: data.session.expenses,
+                settlements: data.session.settlements,
+                auditLogs: data.session.auditLogs,
+                updatedAt: data.session.updatedAt,
+              });
+              set((state) => ({
+                activeSession:
+                  state.activeSession?.sessionId === sessionId ? data.session : state.activeSession,
+                sessions: state.sessions.map((s) => (s.sessionId === sessionId ? data.session : s)),
+              }));
+            }
+          }
+        } catch (err) {
           console.warn('[Splitter] Network error recording settlement, queuing offline:', err);
           await db.splitOfflineQueue.add({
             sessionId,
@@ -758,7 +779,7 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
             status: 'pending',
             retryCount: 0,
           });
-        });
+        }
       }
 
       // Sync to CapFlow Transactions and update cumulative balance
@@ -798,6 +819,95 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       return settlement;
     } catch (err) {
       console.error('[Splitter] Settlement rollback:', err);
+      set({ activeSession: rollbackSession });
+      throw err;
+    }
+  },
+
+  deleteSettlement: async (sessionId, settlementId) => {
+    const { activeSession } = get();
+    if (!activeSession) return;
+    const now = new Date().toISOString();
+
+    const targetSt = activeSession.settlements.find((s) => s.id === settlementId);
+    if (!targetSt) return;
+
+    const rollbackSession: SplitSession = JSON.parse(JSON.stringify(activeSession));
+
+    const updatedSettlements = activeSession.settlements.filter((s) => s.id !== settlementId);
+    const updatedExpenses = activeSession.expenses.map((e) => {
+      if (targetSt.expenseId === e.id || e.splits.some((s) => s.settlementId === settlementId)) {
+        return {
+          ...e,
+          splits: e.splits.map((s) =>
+            s.settlementId === settlementId || (targetSt.expenseId === e.id && s.memberId === targetSt.fromMemberId)
+              ? { ...s, settled: false, settledAt: undefined, settlementId: undefined }
+              : s
+          ),
+        };
+      }
+      return e;
+    });
+
+    const auditLog: SplitAuditLog = {
+      id: `log_${Date.now()}_del_stl`,
+      sessionId,
+      timestamp: now,
+      memberId: targetSt.recordedBy?.memberId || activeSession.members[0]?.id || 'unknown',
+      memberName: targetSt.recordedBy?.name || 'Member',
+      action: `Undid payment of ${formatSplitCurrency(targetSt.amount, activeSession.currency)}`,
+    };
+
+    const updatedSession: SplitSession = {
+      ...activeSession,
+      expenses: updatedExpenses,
+      settlements: updatedSettlements,
+      auditLogs: [auditLog, ...activeSession.auditLogs],
+      updatedAt: now,
+    };
+
+    set((state) => ({
+      activeSession: updatedSession,
+      sessions: state.sessions.map((s) => (s.sessionId === sessionId ? updatedSession : s)),
+    }));
+
+    try {
+      await db.splitSessions.where('sessionId').equals(sessionId).modify({
+        expenses: updatedExpenses,
+        settlements: updatedSettlements,
+        auditLogs: [auditLog, ...activeSession.auditLogs],
+        updatedAt: now,
+      });
+
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        const res = await fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            settlementId,
+            expenseId: targetSt.expenseId,
+            memberId: targetSt.fromMemberId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.session) {
+            lastKnownAuditLogId = data.session.auditLogs?.[0]?.id || null;
+            await db.splitSessions.where('sessionId').equals(sessionId).modify({
+              expenses: data.session.expenses,
+              settlements: data.session.settlements,
+              auditLogs: data.session.auditLogs,
+              updatedAt: data.session.updatedAt,
+            });
+            set((state) => ({
+              activeSession: state.activeSession?.sessionId === sessionId ? data.session : state.activeSession,
+              sessions: state.sessions.map((s) => (s.sessionId === sessionId ? data.session : s)),
+            }));
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Splitter] Delete settlement rollback:', err);
       set({ activeSession: rollbackSession });
       throw err;
     }
@@ -886,12 +996,38 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
         }).catch(() => {});
       }
 
+      // Single atomic backend call to create settlement & persist settled split
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settlement),
-        }).catch((e) => console.warn('[Splitter] Remote settlement failed:', e));
+        try {
+          const res = await fetch(
+            `/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(settlement),
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.session) {
+              lastKnownAuditLogId = data.session.auditLogs?.[0]?.id || null;
+              await db.splitSessions.where('sessionId').equals(sessionId).modify({
+                expenses: data.session.expenses,
+                settlements: data.session.settlements,
+                auditLogs: data.session.auditLogs,
+                updatedAt: data.session.updatedAt,
+              });
+              set((state) => ({
+                activeSession:
+                  state.activeSession?.sessionId === sessionId ? data.session : state.activeSession,
+                sessions: state.sessions.map((s) => (s.sessionId === sessionId ? data.session : s)),
+              }));
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('[Splitter] Remote settlement failed:', e);
+        }
       }
     } else {
       const targetSettlementId = split.settlementId;
@@ -911,6 +1047,43 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
         );
         if (matchIdx !== -1) {
           updatedSettlements.splice(matchIdx, 1);
+        }
+      }
+
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        try {
+          const res = await fetch(
+            `/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`,
+            {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                settlementId: targetSettlementId,
+                expenseId: expense.id,
+                memberId,
+              }),
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.session) {
+              lastKnownAuditLogId = data.session.auditLogs?.[0]?.id || null;
+              await db.splitSessions.where('sessionId').equals(sessionId).modify({
+                expenses: data.session.expenses,
+                settlements: data.session.settlements,
+                auditLogs: data.session.auditLogs,
+                updatedAt: data.session.updatedAt,
+              });
+              set((state) => ({
+                activeSession:
+                  state.activeSession?.sessionId === sessionId ? data.session : state.activeSession,
+                sessions: state.sessions.map((s) => (s.sessionId === sessionId ? data.session : s)),
+              }));
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('[Splitter] Remote undo settlement failed:', e);
         }
       }
     }
@@ -941,17 +1114,6 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       auditLogs: updatedAuditLogs,
       updatedAt: now,
     });
-
-    if (typeof navigator === 'undefined' || navigator.onLine) {
-      fetch(
-        `/api/splitter/sessions/${encodeURIComponent(sessionId)}/expenses/${encodeURIComponent(expenseId)}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ splits: expense.splits }),
-        }
-      ).catch((e) => console.warn('[Splitter] Remote expense patch failed:', e));
-    }
   },
 
   joinSession: async (sessionId, member) => {

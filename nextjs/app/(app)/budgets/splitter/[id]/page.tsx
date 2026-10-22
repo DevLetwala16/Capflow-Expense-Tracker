@@ -32,6 +32,8 @@ import {
   Sparkles,
   X,
   UserPlus,
+  ArrowLeftRight,
+  Zap,
 } from "lucide-react";
 import { useSplitterStore } from "@/lib/store/splitterStore";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -41,6 +43,7 @@ import {
   formatSplitCurrency,
   getExpenseMemberStatus,
   getItemizedExpensesForPair,
+  getSettlementRoadmapHistory,
 } from "@/lib/splitter/debtEngine";
 import {
   generateSplitterReportPDF,
@@ -85,6 +88,7 @@ export default function SplitterSessionDashboard() {
     deleteExpense,
     recordSettlement,
     toggleSettleExpenseShare,
+    deleteSettlement,
     updateSession,
     deleteSession,
     startRealtimeSync,
@@ -104,6 +108,17 @@ export default function SplitterSessionDashboard() {
   // Expanded itemized view state for Expenses tab & Roadmap tab
   const [expandedExpenseIds, setExpandedExpenseIds] = useState<Set<string>>(new Set());
   const [expandedRoadmapIndices, setExpandedRoadmapIndices] = useState<Set<number>>(new Set());
+  const [historyFilter, setHistoryFilter] = useState<"all" | "marked_paid" | "auto_adjustment">("all");
+  const [expandedAdjustmentIds, setExpandedAdjustmentIds] = useState<Set<string>>(new Set());
+
+  const toggleAdjustmentExpansion = (id: string) => {
+    setExpandedAdjustmentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const toggleExpenseExpansion = (id: string) => {
     setExpandedExpenseIds((prev) => {
@@ -163,6 +178,24 @@ export default function SplitterSessionDashboard() {
   const simplifiedDebts = useMemo(() => {
     return simplifyDebts(memberPositions);
   }, [memberPositions]);
+
+  const settlementHistory = useMemo(() => {
+    if (!activeSession) return [];
+    return getSettlementRoadmapHistory(activeSession);
+  }, [activeSession]);
+
+  const filteredSettlementHistory = useMemo(() => {
+    if (historyFilter === "all") return settlementHistory;
+    return settlementHistory.filter((item) => item.type === historyFilter);
+  }, [settlementHistory, historyFilter]);
+
+  const markedPaidCount = useMemo(() => {
+    return settlementHistory.filter((item) => item.type === "marked_paid").length;
+  }, [settlementHistory]);
+
+  const autoAdjustedCount = useMemo(() => {
+    return settlementHistory.filter((item) => item.type === "auto_adjustment").length;
+  }, [settlementHistory]);
 
   const totalGroupSpend = useMemo(() => {
     if (!activeSession) return 0;
@@ -742,7 +775,7 @@ export default function SplitterSessionDashboard() {
                   const settledSplits = exp.splits.filter((s) => {
                     const member = activeSession.members.find((m) => m.id === s.memberId);
                     if (!member) return false;
-                    const status = getExpenseMemberStatus(exp, member, activeSession.members);
+                    const status = getExpenseMemberStatus(exp, member, activeSession);
                     return status.status === "settled" || status.status === "paid";
                   }).length;
                   const allSettled = settledSplits === totalSplits && totalSplits > 0;
@@ -898,7 +931,7 @@ export default function SplitterSessionDashboard() {
                                 const statusInfo = getExpenseMemberStatus(
                                   exp,
                                   member,
-                                  activeSession.members
+                                  activeSession
                                 );
 
                                 return (
@@ -1147,7 +1180,7 @@ export default function SplitterSessionDashboard() {
                                               : "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
                                           }`}
                                         >
-                                          {item.settled ? "Settled ✓" : "Pending"}
+                                          {item.settledLabel || (item.settled ? "Settled ✓" : "Pending")}
                                         </span>
                                       </div>
 
@@ -1189,43 +1222,265 @@ export default function SplitterSessionDashboard() {
               </div>
             )}
 
-            {/* Past Settlements History */}
-            {activeSession.settlements && activeSession.settlements.length > 0 && (
-              <div className="pt-4 border-t border-[var(--border-color)] space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Settlement History ({activeSession.settlements.length})
-                </h4>
-                <div className="space-y-2">
-                  {activeSession.settlements.map((st) => {
-                    const memberNameMap = new Map(
-                      activeSession.members.map((m) => [m.id, m.name])
-                    );
-                    const fromName = memberNameMap.get(st.fromMemberId) || "Member";
-                    const toName = memberNameMap.get(st.toMemberId) || "Member";
+            {/* ── Settlement & Adjustment History Section ── */}
+            <div className="pt-6 border-t border-[var(--border-color)] space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                      Settlement & Adjustment History
+                    </h4>
+                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)]">
+                      {settlementHistory.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                    Live history of payments marked as paid and debts automatically adjusted through mutual expenses.
+                  </p>
+                </div>
 
+                {/* Filter Chips */}
+                {settlementHistory.length > 0 && (
+                  <div className="flex items-center gap-1.5 p-1 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)]/70 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setHistoryFilter("all")}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                        historyFilter === "all"
+                          ? "bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      }`}
+                    >
+                      All ({settlementHistory.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryFilter("marked_paid")}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        historyFilter === "marked_paid"
+                          ? "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 font-extrabold"
+                          : "text-[var(--text-secondary)] hover:text-[#10B981]"
+                      }`}
+                    >
+                      <span>Marked Paid</span>
+                      <span className="text-[9px] px-1 rounded-full bg-[#10B981]/20">
+                        {markedPaidCount}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryFilter("auto_adjustment")}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
+                        historyFilter === "auto_adjustment"
+                          ? "bg-[#6366F1]/15 text-[#6366F1] border border-[#6366F1]/30 font-extrabold"
+                          : "text-[var(--text-secondary)] hover:text-[#6366F1]"
+                      }`}
+                    >
+                      <span>Auto-Adjusted</span>
+                      <span className="text-[9px] px-1 rounded-full bg-[#6366F1]/20">
+                        {autoAdjustedCount}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* History List or Empty State */}
+              {filteredSettlementHistory.length === 0 ? (
+                <div className="p-6 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] text-center space-y-1.5">
+                  <p className="text-xs font-semibold text-[var(--text-secondary)]">
+                    {settlementHistory.length === 0
+                      ? "No settlement history recorded yet."
+                      : `No ${historyFilter === "marked_paid" ? "marked paid" : "auto-adjusted"} records found.`}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-secondary)]/80">
+                    When members settle balances or their payments offset each other across mutual expenses, history appears here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {filteredSettlementHistory.map((item) => {
+                    if (item.type === "marked_paid") {
+                      return (
+                        <motion.div
+                          key={item.id}
+                          layout
+                          className="p-3.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between text-xs gap-3 hover:border-[#10B981]/40 transition-all shadow-sm"
+                        >
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-xl bg-[#10B981]/15 text-[#10B981] flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Check size={16} strokeWidth={2.5} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-[var(--text-primary)] break-words">
+                                  <span className="text-[#EF4444]">{item.fromMemberName}</span>
+                                  <span className="text-[var(--text-secondary)] font-normal mx-1">paid</span>
+                                  <span className="text-[#10B981]">{item.toMemberName}</span>
+                                </p>
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                                  Marked as Paid ✓
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-[var(--text-secondary)] mt-0.5 flex items-center gap-2 flex-wrap">
+                                <span>
+                                  {new Date(item.date).toLocaleDateString("en-IN", {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })}
+                                </span>
+                                {item.relatedExpenseTitle && (
+                                  <>
+                                    <span>·</span>
+                                    <span className="text-[#6366F1] font-semibold">
+                                      For: {item.relatedExpenseTitle}
+                                    </span>
+                                  </>
+                                )}
+                                {item.notes && (
+                                  <>
+                                    <span>·</span>
+                                    <span className="italic">{item.notes}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 flex-shrink-0">
+                            <div className="text-right">
+                              <span className="text-sm font-extrabold text-[#10B981] block">
+                                {formatSplitCurrency(item.amount, item.currency)}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (confirm("Are you sure you want to undo this settlement payment?")) {
+                                  await deleteSettlement(activeSession.sessionId, item.settlementId);
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
+                              title="Undo this payment"
+                            >
+                              Undo
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    }
+
+                    // Auto-Adjusted History Item
+                    const isAdjExpanded = expandedAdjustmentIds.has(item.id);
                     return (
-                      <div
-                        key={st.id}
-                        className="p-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] flex items-center justify-between text-xs gap-3"
+                      <motion.div
+                        key={item.id}
+                        layout
+                        className="p-3.5 bg-[var(--bg-card)] rounded-2xl border border-[#6366F1]/30 hover:border-[#6366F1]/50 transition-all shadow-sm space-y-2.5 cursor-pointer select-none"
+                        onClick={() => toggleAdjustmentExpansion(item.id)}
                       >
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-[var(--text-primary)] break-words">
-                            <span className="text-[#EF4444] font-bold">{fromName}</span> paid{" "}
-                            <span className="text-[#10B981] font-bold">{toName}</span>
-                          </p>
-                          <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                            {new Date(st.date).toLocaleDateString()} {st.notes ? `· ${st.notes}` : ""}
-                          </p>
+                        <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className="w-8 h-8 rounded-xl bg-[#6366F1]/15 text-[#6366F1] flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <ArrowLeftRight size={16} strokeWidth={2.5} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-[var(--text-primary)]">
+                                  <span>{item.memberA.name}</span>
+                                  <span className="text-[#6366F1] mx-1.5 font-extrabold">⇄</span>
+                                  <span>{item.memberB.name}</span>
+                                </p>
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1] border border-[#6366F1]/30 flex items-center gap-1">
+                                  <Zap size={10} strokeWidth={2.5} />
+                                  <span>Automatically Adjusted</span>
+                                </span>
+                                {item.isFullySettled ? (
+                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                                    Net ₹0 Fully Settled ✓
+                                  </span>
+                                ) : item.remainingNetDebt ? (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30">
+                                    Remaining: {item.remainingNetDebt.debtorName} owes {formatSplitCurrency(item.remainingNetDebt.amount, item.currency)}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-[10.5px] text-[var(--text-secondary)] mt-1 leading-relaxed">
+                                <span className="font-semibold text-[var(--text-primary)]">{item.memberA.name}</span> paid {formatSplitCurrency(item.memberA.grossPaidForB, item.currency)} for {item.memberB.name}, which was{" "}
+                                <span className="text-[#6366F1] font-bold">automatically adjusted</span> against{" "}
+                                <span className="font-semibold text-[var(--text-primary)]">{item.memberB.name}</span> paying {formatSplitCurrency(item.memberB.grossPaidForA, item.currency)} for {item.memberA.name}. No cash transfer required!
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
+                            <div className="flex flex-col sm:items-end">
+                              <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                                Adjusted Amount
+                              </span>
+                              <span className="text-sm font-extrabold text-[#6366F1]">
+                                {formatSplitCurrency(item.adjustedAmount, item.currency)}
+                              </span>
+                            </div>
+                            <div className="p-1 text-[var(--text-secondary)]">
+                              {isAdjExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </div>
+                          </div>
                         </div>
-                        <span className="font-bold text-[#10B981] flex-shrink-0">
-                          {formatSplitCurrency(st.amount, activeSession.currency)} ✓
-                        </span>
-                      </div>
+
+                        {/* Expandable Offsetting Expenses Breakdown */}
+                        <AnimatePresence>
+                          {isAdjExpanded && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="pt-2.5 border-t border-[var(--border-color)]/70 space-y-1.5 overflow-hidden"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <p className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
+                                Mutual Offsetting Expenses ({item.offsetExpenses.length})
+                              </p>
+                              <div className="space-y-1.5">
+                                {item.offsetExpenses.map((exp, expIdx) => (
+                                  <div
+                                    key={`${exp.expenseId}-${expIdx}`}
+                                    className="p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between text-[11px]"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <span className="font-bold text-[var(--text-primary)] truncate block">
+                                        {exp.title}
+                                      </span>
+                                      <span className="text-[10px] text-[var(--text-secondary)]">
+                                        {new Date(exp.date).toLocaleDateString("en-IN", {
+                                          day: "numeric",
+                                          month: "short",
+                                        })}{" "}
+                                        · <span className="font-semibold text-[#10B981]">{exp.payerName}</span> paid for{" "}
+                                        <span className="font-semibold text-[#EF4444]">{exp.beneficiaryName}</span>
+                                      </span>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <span className="font-extrabold text-[var(--text-primary)] block">
+                                        {formatSplitCurrency(exp.shareAmount, item.currency)}
+                                      </span>
+                                      <span className="text-[9px] font-semibold text-[#6366F1]">
+                                        Offset Share
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -1456,6 +1711,7 @@ export default function SplitterSessionDashboard() {
         members={activeSession.members}
         currency={activeSession.currency}
         sessionId={activeSession.sessionId}
+        sessionName={activeSession.name}
         currentMember={currentMember}
         existingExpense={editingExpense}
         onSave={async (expData) => {

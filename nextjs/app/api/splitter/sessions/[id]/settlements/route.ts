@@ -121,6 +121,9 @@ export async function POST(
     };
     session.auditLogs.unshift(auditLog);
 
+    session.markModified('settlements');
+    session.markModified('expenses');
+    session.markModified('auditLogs');
     await session.save();
 
     // Notify settlement participants in background
@@ -153,6 +156,73 @@ export async function POST(
     console.error('Error logging split settlement:', error);
     return NextResponse.json(
       { error: 'Failed to record settlement', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await connectMongoDB();
+    const id = params.id;
+    const body = await req.json().catch(() => ({}));
+    const url = new URL(req.url);
+    const settlementId = body.settlementId || url.searchParams.get('settlementId');
+    const expenseId = body.expenseId || url.searchParams.get('expenseId');
+    const memberId = body.memberId || url.searchParams.get('memberId');
+
+    const session = await SplitSessionModel.findOne({
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
+    });
+
+    if (!session) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // 1. Remove settlement if settlementId given or matching expenseId
+    if (settlementId) {
+      session.settlements = session.settlements.filter((s: any) => s.id !== settlementId);
+    } else if (expenseId) {
+      session.settlements = session.settlements.filter((s: any) => s.expenseId !== expenseId);
+    }
+
+    // 2. Unsettle expense split if expenseId given
+    if (expenseId) {
+      const exp = session.expenses.find((e: any) => e.id === expenseId);
+      if (exp) {
+        if (memberId) {
+          const split = exp.splits.find((s: any) => s.memberId === memberId);
+          if (split) {
+            split.settled = false;
+            split.settledAt = undefined;
+            split.settlementId = undefined;
+          }
+        } else {
+          exp.splits.forEach((s: any) => {
+            s.settled = false;
+            s.settledAt = undefined;
+            s.settlementId = undefined;
+          });
+        }
+      }
+    }
+
+    session.markModified('settlements');
+    session.markModified('expenses');
+    await session.save();
+
+    return NextResponse.json({ success: true, session });
+  } catch (error: any) {
+    console.error('Error removing settlement:', error);
+    return NextResponse.json(
+      { error: 'Failed to remove settlement', details: error.message },
       { status: 500 }
     );
   }

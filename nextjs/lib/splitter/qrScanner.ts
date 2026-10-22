@@ -57,6 +57,19 @@ export function extractSessionIdFromQR(rawText: string): string {
   return normalizeId(text);
 }
 
+let cachedBarcodeDetector: any = null;
+function getBarcodeDetector(): any {
+  if (cachedBarcodeDetector) return cachedBarcodeDetector;
+  if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+    try {
+      cachedBarcodeDetector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+    } catch {
+      cachedBarcodeDetector = null;
+    }
+  }
+  return cachedBarcodeDetector;
+}
+
 /**
  * Decodes a QR code from a video frame using BarcodeDetector if available, falling back to jsQR
  */
@@ -64,34 +77,37 @@ export async function decodeQRCodeFromVideo(
   video: HTMLVideoElement,
   canvas?: HTMLCanvasElement
 ): Promise<string | null> {
-  if (!video || video.readyState < 2) return null;
+  if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
 
-  // 1. Try native BarcodeDetector API (hardware accelerated where available)
-  if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+  // 1. Try native BarcodeDetector API (hardware accelerated where available, e.g. Android Chrome)
+  const detector = getBarcodeDetector();
+  if (detector) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
       const barcodes = await detector.detect(video);
       if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
         return barcodes[0].rawValue;
       }
     } catch {
-      // Fallback to jsQR
+      // Fall through to jsQR
     }
   }
 
   // 2. Pure JS canvas fallback with jsQR (works in all browsers: Safari, Firefox, Chrome, iOS, Android)
   try {
     const cvs = canvas || document.createElement("canvas");
-    cvs.width = video.videoWidth || 640;
-    cvs.height = video.videoHeight || 480;
+    // Scale down high-resolution mobile camera frames (1080p/4K) to ~640px max for rapid 60fps processing
+    const maxDim = 640;
+    const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+    cvs.width = Math.floor(video.videoWidth * scale);
+    cvs.height = Math.floor(video.videoHeight * scale);
+
     const ctx = cvs.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
 
     ctx.drawImage(video, 0, 0, cvs.width, cvs.height);
     const imageData = ctx.getImageData(0, 0, cvs.width, cvs.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height, {
-      inversionAttempts: "dontInvert",
+      inversionAttempts: "attemptBoth",
     });
 
     if (code && code.data) {

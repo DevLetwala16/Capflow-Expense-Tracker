@@ -50,6 +50,7 @@ interface AddSplitExpenseModalProps {
   members: SplitMember[];
   currency?: string;
   sessionId: string;
+  sessionName?: string;
   currentMember?: SplitMember;
   existingExpense?: SplitExpenseItem | null;
   onSave: (expenseData: Partial<SplitExpenseItem>) => Promise<any>;
@@ -61,6 +62,7 @@ export function AddSplitExpenseModal({
   members,
   currency = "INR",
   sessionId,
+  sessionName = "Splitter",
   currentMember,
   existingExpense,
   onSave,
@@ -512,7 +514,7 @@ export function AddSplitExpenseModal({
 
       // Fire notification for split expense logged
       notifySplitExpenseLogged({
-        sessionName: "Splitter",
+        sessionName: sessionName || "Splitter",
         title: title.trim(),
         amount: parsedTotal,
         currency,

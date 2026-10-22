@@ -278,42 +278,31 @@ export function JoinSessionModal({
         } else {
           // ── SMARTPHONE / TABLET / MULTI-CAMERA DEVICE ──
           // Smooth switching between 1x primary rear camera and front selfie camera.
-          // Step 1: Standard mobile facingMode with ideal 1280x720
+          // Step 1: Exact facingMode with dimensions (forces mobile OS hardware camera switch)
           try {
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
-                facingMode: { ideal: mode },
+                facingMode: { exact: mode },
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
               },
             });
           } catch (e1) {
-            console.warn("[Camera] facingMode with ideal dimensions failed:", e1);
+            console.warn("[Camera] Exact facingMode with ideal dimensions failed:", e1);
           }
 
-          // Step 2: Unconstrained facingMode (standard for portrait sensors)
+          // Step 2: Unconstrained exact facingMode
           if (!newStream) {
             try {
               newStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: mode } },
+                video: { facingMode: { exact: mode } },
               });
             } catch (e2) {
-              console.warn("[Camera] unconstrained facingMode failed:", e2);
+              console.warn("[Camera] Unconstrained exact facingMode failed:", e2);
             }
           }
 
-          // Step 3: Direct facingMode string
-          if (!newStream) {
-            try {
-              newStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: mode },
-              });
-            } catch (e3) {
-              console.warn("[Camera] string facingMode failed:", e3);
-            }
-          }
-
-          // Step 4: Device enumeration fallback
+          // Step 3: Device enumeration search (filter physical front vs rear hardware sensors)
           if (!newStream) {
             try {
               const currentVideoDevs = (await navigator.mediaDevices.enumerateDevices()).filter(
@@ -342,19 +331,46 @@ export function JoinSessionModal({
                       !l.includes("ultra")
                     );
                   }
-                }) || (mode === "environment" ? currentVideoDevs[0] : currentVideoDevs[1]);
+                }) ||
+                (mode === "environment" ? currentVideoDevs[0] : currentVideoDevs[1]);
 
               if (targetDev?.deviceId) {
                 newStream = await navigator.mediaDevices.getUserMedia({
                   video: { deviceId: { exact: targetDev.deviceId } },
                 });
               }
-            } catch (e4) {
-              console.warn("[Camera] Device enumeration search failed:", e4);
+            } catch (e3) {
+              console.warn("[Camera] Device enumeration search failed:", e3);
             }
           }
 
-          // Step 5: Ultimate fallback: any available video device
+          // Step 4: Ideal facingMode fallback
+          if (!newStream) {
+            try {
+              newStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                  facingMode: { ideal: mode },
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                },
+              });
+            } catch (e4) {
+              console.warn("[Camera] Ideal facingMode with dimensions failed:", e4);
+            }
+          }
+
+          // Step 5: Direct facingMode string
+          if (!newStream) {
+            try {
+              newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: mode },
+              });
+            } catch (e5) {
+              console.warn("[Camera] Direct string facingMode failed:", e5);
+            }
+          }
+
+          // Step 6: Ultimate fallback: any available video device
           if (!newStream) {
             newStream = await navigator.mediaDevices.getUserMedia({ video: true });
           }
@@ -381,23 +397,20 @@ export function JoinSessionModal({
           video.setAttribute("webkit-playsinline", "true");
           video.muted = true;
 
-          try {
-            await video.play();
-          } catch (playErr) {
-            console.warn("[Camera] Video play interrupted, awaiting loadedmetadata:", playErr);
-            video.onloadedmetadata = () => {
-              video.play().catch(() => {});
-            };
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((playErr) => {
+              console.warn("[Camera] Autoplay waiting on user gesture or metadata:", playErr);
+              video.onloadedmetadata = () => {
+                video.play().catch(() => {});
+              };
+            });
           }
         }
 
-        // Detect actual active facingMode to keep state truthful
-        const activeTrack = newStream.getVideoTracks()[0];
-        const activeSettings = activeTrack?.getSettings ? activeTrack.getSettings() : {};
-        if (activeSettings.facingMode === "user" || activeSettings.facingMode === "environment") {
-          setFacingMode(activeSettings.facingMode);
-          facingModeRef.current = activeSettings.facingMode;
-        }
+        // Truthfully record the mode that was requested and active
+        setFacingMode(mode);
+        facingModeRef.current = mode;
 
         setCameraActive(true);
         setCameraStarting(false);
