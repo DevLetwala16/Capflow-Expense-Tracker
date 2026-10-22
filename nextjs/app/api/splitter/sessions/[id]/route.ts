@@ -15,7 +15,11 @@ export async function GET(
 
     // Can search by sessionId (e.g. CAP-SPLIT-9821-X) or Mongo _id
     const session = await SplitSessionModel.findOne({
-      $or: [{ sessionId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
     }).lean();
 
     if (!session) {
@@ -41,7 +45,11 @@ export async function PUT(
     const body = await req.json();
 
     const session = await SplitSessionModel.findOne({
-      $or: [{ sessionId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
     });
 
     if (!session) {
@@ -93,7 +101,11 @@ export async function DELETE(
     const id = params.id;
 
     await SplitSessionModel.deleteOne({
-      $or: [{ sessionId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
     });
 
     return NextResponse.json({ success: true });

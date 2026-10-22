@@ -6,6 +6,9 @@ import {
   roundTo2Decimals,
   toCents,
   fromCents,
+  generateSessionId,
+  getExpenseMemberStatus,
+  getItemizedExpensesForPair,
 } from '@/lib/splitter/debtEngine';
 import { SplitSession } from '@/types/splitter';
 
@@ -226,5 +229,115 @@ describe('Splitter Debt Engine', () => {
     expect(step2.updatedShares['D']).toBe('125.00');
     const sumStep2 = Object.values(step2.updatedShares).reduce((acc, v) => acc + parseFloat(v), 0);
     expect(roundTo2Decimals(sumStep2)).toBe(1000);
+  });
+
+  test('generateSessionId generates ID starting with CAP@ containing uppercase, lowercase, and numbers [0-9]', () => {
+    const id = generateSessionId();
+    expect(id.startsWith('CAP@')).toBe(true);
+    const suffix = id.slice(4);
+    expect(suffix.length).toBe(8);
+    // Contains at least one uppercase
+    expect(/[A-Z]/.test(suffix)).toBe(true);
+    // Contains at least one lowercase
+    expect(/[a-z]/.test(suffix)).toBe(true);
+    // Contains at least one digit
+    expect(/[0-9]/.test(suffix)).toBe(true);
+    // Contains only alphanumeric characters
+    expect(/^[A-Za-z0-9]+$/.test(suffix)).toBe(true);
+  });
+
+  test('getExpenseMemberStatus correctly computes paid, pending, and settled statuses', () => {
+    const members = [
+      { id: 'm1', name: 'Alice', handle: '@alice', color: '#10B981', isDependent: false },
+      { id: 'm2', name: 'Bob', handle: '@bob', color: '#6366F1', isDependent: false },
+    ];
+
+    const expense = {
+      id: 'e1',
+      sessionId: 'CAP@test',
+      title: 'Dinner',
+      amount: 100,
+      currency: 'INR',
+      category: 'Food',
+      date: '2026-10-22',
+      createdBy: { memberId: 'm1', name: 'Alice' },
+      paidBy: [{ memberId: 'm1', amount: 100 }],
+      splitMode: 'equal' as const,
+      splits: [
+        { memberId: 'm1', amount: 50 },
+        { memberId: 'm2', amount: 50 },
+      ],
+      createdAt: '2026-10-22',
+      updatedAt: '2026-10-22',
+    };
+
+    // Alice paid 100 upfront, her share is 50 -> status: paid
+    const aliceStatus = getExpenseMemberStatus(expense, members[0], members);
+    expect(aliceStatus.status).toBe('paid');
+    expect(aliceStatus.isPayer).toBe(true);
+
+    // Bob paid 0, his share is 50 -> status: pending
+    const bobStatus = getExpenseMemberStatus(expense, members[1], members);
+    expect(bobStatus.status).toBe('pending');
+    expect(bobStatus.canMarkSettled).toBe(true);
+
+    // If Bob's split is marked settled -> status: settled
+    const settledExpense = {
+      ...expense,
+      splits: [
+        { memberId: 'm1', amount: 50 },
+        { memberId: 'm2', amount: 50, settled: true },
+      ],
+    };
+    const bobSettledStatus = getExpenseMemberStatus(settledExpense, members[1], members);
+    expect(bobSettledStatus.status).toBe('settled');
+    expect(bobSettledStatus.canUndo).toBe(true);
+  });
+
+  test('getItemizedExpensesForPair retrieves expenses between debtor and creditor', () => {
+    const session: SplitSession = {
+      sessionId: 'CAP@test',
+      userId: 'u1',
+      name: 'Trip',
+      template: 'group',
+      startDate: '2026-10-01',
+      endDate: '2026-10-05',
+      currency: 'INR',
+      status: 'active',
+      members: [
+        { id: 'm1', name: 'Alice', handle: '@alice', color: '#10B981', isDependent: false },
+        { id: 'm2', name: 'Bob', handle: '@bob', color: '#6366F1', isDependent: false },
+      ],
+      expenses: [
+        {
+          id: 'e1',
+          sessionId: 'CAP@test',
+          title: 'Lunch',
+          amount: 200,
+          currency: 'INR',
+          category: 'Food',
+          date: '2026-10-02',
+          createdBy: { memberId: 'm1', name: 'Alice' },
+          paidBy: [{ memberId: 'm1', amount: 200 }],
+          splitMode: 'equal',
+          splits: [
+            { memberId: 'm1', amount: 100 },
+            { memberId: 'm2', amount: 100, settled: false },
+          ],
+          createdAt: '2026-10-02',
+          updatedAt: '2026-10-02',
+        },
+      ],
+      settlements: [],
+      auditLogs: [],
+      createdAt: '2026-10-01',
+      updatedAt: '2026-10-02',
+    };
+
+    const breakdown = getItemizedExpensesForPair(session, 'm2', 'm1');
+    expect(breakdown).toHaveLength(1);
+    expect(breakdown[0].title).toBe('Lunch');
+    expect(breakdown[0].shareAmount).toBe(100);
+    expect(breakdown[0].settled).toBe(false);
   });
 });

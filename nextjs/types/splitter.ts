@@ -24,6 +24,9 @@ export interface SplitPayerEntry {
 export interface SplitShareEntry {
   memberId: string;
   amount: number;
+  settled?: boolean; // Whether this participant's share has been marked as settled
+  settledAt?: string; // Timestamp when settled
+  settlementId?: string; // Reference to settlement transaction
 }
 
 export interface SplitExpenseItem {
@@ -57,6 +60,7 @@ export interface SplitSettlement {
   amount: number;
   date: string;
   notes?: string;
+  expenseId?: string; // Optional link to specific itemized expense
   recordedBy: {
     memberId: string;
     name: string;

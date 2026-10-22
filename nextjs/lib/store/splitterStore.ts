@@ -67,9 +67,16 @@ interface SplitterState {
       amount: number;
       date?: string;
       notes?: string;
+      expenseId?: string;
       recordedBy?: { memberId: string; name: string };
     }
   ) => Promise<SplitSettlement>;
+
+  toggleSettleExpenseShare: (
+    sessionId: string,
+    expenseId: string,
+    memberId: string
+  ) => Promise<void>;
 
   joinSession: (
     sessionId: string,
@@ -654,12 +661,46 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       amount: roundTo2Decimals(data.amount),
       date: data.date || now,
       notes: data.notes,
+      expenseId: data.expenseId,
       recordedBy: data.recordedBy || {
         memberId: data.fromMemberId,
         name: fromMember?.name || 'Member',
       },
       createdAt: now,
     };
+
+    // Synchronize expense splits: mark contributing pending splits as settled
+    const updatedExpenses = activeSession.expenses.map((exp) => ({
+      ...exp,
+      splits: exp.splits.map((s) => ({ ...s })),
+    }));
+
+    if (data.expenseId) {
+      const targetExp = updatedExpenses.find((e) => e.id === data.expenseId);
+      if (targetExp) {
+        const split = targetExp.splits.find((s) => s.memberId === data.fromMemberId);
+        if (split) {
+          split.settled = true;
+          split.settledAt = now;
+          split.settlementId = settlementId;
+        }
+      }
+    } else {
+      let remaining = settlement.amount;
+      for (const exp of updatedExpenses) {
+        if (remaining <= 0) break;
+        const toPaid = exp.paidBy?.some((p) => p.memberId === data.toMemberId && p.amount > 0);
+        if (toPaid) {
+          const split = exp.splits.find((s) => s.memberId === data.fromMemberId && !s.settled);
+          if (split && split.amount <= remaining + 0.01) {
+            split.settled = true;
+            split.settledAt = now;
+            split.settlementId = settlementId;
+            remaining -= split.amount;
+          }
+        }
+      }
+    }
 
     const auditLog: SplitAuditLog = {
       id: `log_${Date.now()}_stl`,
@@ -680,6 +721,7 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
         if (local) {
           const updatedSettlements = [settlement, ...(local.settlements || [])];
           await db.splitSessions.update(local.id!, {
+            expenses: updatedExpenses,
             settlements: updatedSettlements,
             auditLogs: [auditLog, ...(local.auditLogs || [])],
             updatedAt: now,
@@ -689,6 +731,7 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
 
       const updatedSession: SplitSession = {
         ...activeSession,
+        expenses: updatedExpenses,
         settlements: [settlement, ...activeSession.settlements],
         auditLogs: [auditLog, ...activeSession.auditLogs],
         updatedAt: now,
@@ -757,6 +800,157 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       console.error('[Splitter] Settlement rollback:', err);
       set({ activeSession: rollbackSession });
       throw err;
+    }
+  },
+
+  toggleSettleExpenseShare: async (sessionId, expenseId, memberId) => {
+    const { activeSession, sessions } = get();
+    const session =
+      activeSession?.sessionId === sessionId
+        ? activeSession
+        : sessions.find((s) => s.sessionId === sessionId);
+    if (!session) return;
+
+    const expIndex = session.expenses.findIndex((e) => e.id === expenseId);
+    if (expIndex === -1) return;
+
+    const expense = {
+      ...session.expenses[expIndex],
+      splits: session.expenses[expIndex].splits.map((s) => ({ ...s })),
+    };
+    const splitIndex = expense.splits.findIndex((s) => s.memberId === memberId);
+    if (splitIndex === -1) return;
+
+    const split = { ...expense.splits[splitIndex] };
+    const now = new Date().toISOString();
+    const willBeSettled = !split.settled;
+
+    const member = session.members.find((m) => m.id === memberId);
+    const effectiveDebtorId =
+      member?.isDependent && member.primaryPayerMemberId
+        ? member.primaryPayerMemberId
+        : memberId;
+
+    const payerEntry = expense.paidBy?.find((p) => p.amount > 0);
+    const creditorId = payerEntry?.memberId || session.members[0]?.id;
+
+    let updatedSettlements = [...session.settlements];
+    let updatedAuditLogs = [...session.auditLogs];
+
+    if (willBeSettled) {
+      const settlementId = `stl_exp_${expense.id}_${memberId}_${Date.now()}`;
+      split.settled = true;
+      split.settledAt = now;
+      split.settlementId = settlementId;
+
+      const authUser = useAuthStore.getState().user;
+      const currentMember =
+        session.members.find((m) => m.userId === authUser?.id) || session.members[0];
+
+      const settlement: SplitSettlement = {
+        id: settlementId,
+        sessionId: session.sessionId,
+        fromMemberId: effectiveDebtorId,
+        toMemberId: creditorId,
+        amount: split.amount,
+        date: now,
+        notes: `Itemized expense: ${expense.title}`,
+        expenseId: expense.id,
+        recordedBy: {
+          memberId: currentMember?.id || 'member',
+          name: currentMember?.name || 'Member',
+        },
+        createdAt: now,
+      };
+
+      updatedSettlements.unshift(settlement);
+
+      const auditLog: SplitAuditLog = {
+        id: `log_${Date.now()}_stl_exp`,
+        sessionId: session.sessionId,
+        timestamp: now,
+        memberId: currentMember?.id,
+        memberName: currentMember?.name || 'Member',
+        action: `Settled "${expense.title}" for ${member?.name || 'Member'}: ${formatSplitCurrency(
+          split.amount,
+          session.currency
+        )}`,
+      };
+      updatedAuditLogs.unshift(auditLog);
+
+      if (authUser?.id) {
+        syncSettlementToCapFlowTransactions({
+          session,
+          settlement,
+          userId: authUser.id,
+        }).catch(() => {});
+      }
+
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        fetch(`/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settlement),
+        }).catch((e) => console.warn('[Splitter] Remote settlement failed:', e));
+      }
+    } else {
+      const targetSettlementId = split.settlementId;
+      split.settled = false;
+      split.settledAt = undefined;
+      split.settlementId = undefined;
+
+      if (targetSettlementId) {
+        updatedSettlements = updatedSettlements.filter((s) => s.id !== targetSettlementId);
+      } else {
+        const matchIdx = updatedSettlements.findIndex(
+          (s) =>
+            s.fromMemberId === effectiveDebtorId &&
+            s.toMemberId === creditorId &&
+            Math.abs(s.amount - split.amount) < 0.01 &&
+            (s.expenseId === expense.id || s.notes?.includes(expense.title))
+        );
+        if (matchIdx !== -1) {
+          updatedSettlements.splice(matchIdx, 1);
+        }
+      }
+    }
+
+    expense.splits[splitIndex] = split;
+    expense.updatedAt = now;
+
+    const updatedExpenses = [...session.expenses];
+    updatedExpenses[expIndex] = expense;
+
+    const updatedSession: SplitSession = {
+      ...session,
+      expenses: updatedExpenses,
+      settlements: updatedSettlements,
+      auditLogs: updatedAuditLogs,
+      updatedAt: now,
+    };
+
+    set((state) => ({
+      activeSession:
+        state.activeSession?.sessionId === sessionId ? updatedSession : state.activeSession,
+      sessions: state.sessions.map((s) => (s.sessionId === sessionId ? updatedSession : s)),
+    }));
+
+    await db.splitSessions.where('sessionId').equals(sessionId).modify({
+      expenses: updatedExpenses,
+      settlements: updatedSettlements,
+      auditLogs: updatedAuditLogs,
+      updatedAt: now,
+    });
+
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      fetch(
+        `/api/splitter/sessions/${encodeURIComponent(sessionId)}/expenses/${encodeURIComponent(expenseId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ splits: expense.splits }),
+        }
+      ).catch((e) => console.warn('[Splitter] Remote expense patch failed:', e));
     }
   },
 

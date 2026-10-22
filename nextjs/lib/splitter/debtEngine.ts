@@ -370,16 +370,202 @@ export function simplifyDebts(positions: MemberNetPosition[]): SettlementTransac
 }
 
 /**
- * Generate unique collision-free session ID, e.g. CAP-SPLIT-9821-X
+ * Generate unique collision-free session ID.
+ * Starts with "CAP@" followed by a combination of:
+ * - uppercase letters (A-Z)
+ * - lowercase letters (a-z)
+ * - numbers (0-9)
+ * e.g. CAP@a8K2Xp9q
  */
 export function generateSessionId(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let randNum = Math.floor(1000 + Math.random() * 9000);
-  let suffix = '';
-  for (let i = 0; i < 2; i++) {
-    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lower = 'abcdefghijklmnopqrstuvwxyz';
+  const digits = '0123456789';
+  const all = upper + lower + digits;
+
+  // 8 random characters ensuring mix of uppercase, lowercase, and digits
+  const length = 8;
+  const chars: string[] = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+  ];
+  for (let i = 3; i < length; i++) {
+    chars.push(all[Math.floor(Math.random() * all.length)]);
   }
-  return `CAP-SPLIT-${randNum}-${suffix}`;
+  // Shuffle randomly
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return `CAP@${chars.join('')}`;
+}
+
+export interface ExpenseMemberStatus {
+  status: 'paid' | 'settled' | 'pending';
+  label: string;
+  badgeClass: string;
+  isPayer: boolean;
+  canMarkSettled: boolean;
+  canUndo: boolean;
+  shareAmount: number;
+}
+
+export function getExpenseMemberStatus(
+  exp: SplitExpenseItem,
+  m: SplitMember,
+  members: SplitMember[]
+): ExpenseMemberStatus {
+  const split = exp.splits?.find((s) => s.memberId === m.id);
+  const shareAmount = split?.amount || 0;
+
+  // Did this member pay towards the bill?
+  const memberPaid = exp.paidBy?.reduce(
+    (sum, p) => (p.memberId === m.id ? sum + p.amount : sum),
+    0
+  ) || 0;
+
+  // Check dependent liability routing
+  if (m.isDependent && m.primaryPayerMemberId) {
+    const primaryPayer = members.find((x) => x.id === m.primaryPayerMemberId);
+    const primaryPaid = exp.paidBy?.reduce(
+      (sum, p) => (p.memberId === m.primaryPayerMemberId ? sum + p.amount : sum),
+      0
+    ) || 0;
+    const primarySplit = exp.splits?.find((s) => s.memberId === m.primaryPayerMemberId);
+    const combinedShare = (primarySplit?.amount || 0) + shareAmount;
+
+    if (primaryPaid >= combinedShare && combinedShare > 0) {
+      return {
+        status: 'paid',
+        label: `Paid by ${primaryPayer?.name || 'Payer'}`,
+        badgeClass: 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30',
+        isPayer: true,
+        canMarkSettled: false,
+        canUndo: false,
+        shareAmount,
+      };
+    }
+  }
+
+  // If member paid upfront at least their share:
+  if (memberPaid >= shareAmount && shareAmount > 0) {
+    return {
+      status: 'paid',
+      label: 'Paid (Payer)',
+      badgeClass: 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30',
+      isPayer: true,
+      canMarkSettled: false,
+      canUndo: false,
+      shareAmount,
+    };
+  }
+
+  // If split is explicitly marked as settled
+  if (split?.settled) {
+    return {
+      status: 'settled',
+      label: 'Settled ✓',
+      badgeClass: 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30',
+      isPayer: false,
+      canMarkSettled: false,
+      canUndo: true,
+      shareAmount,
+    };
+  }
+
+  // If pending
+  return {
+    status: 'pending',
+    label: 'Pending',
+    badgeClass: 'bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30',
+    isPayer: false,
+    canMarkSettled: true,
+    canUndo: false,
+    shareAmount,
+  };
+}
+
+export interface ItemizedExpenseBreakdown {
+  expenseId: string;
+  title: string;
+  date: string;
+  category: string;
+  totalAmount: number;
+  currency: string;
+  shareAmount: number;
+  settled: boolean;
+  settledAt?: string;
+  payerName: string;
+  isDirectPayer: boolean;
+}
+
+/**
+ * Returns the itemized expenses breakdown relevant to a settlement transaction between two members.
+ */
+export function getItemizedExpensesForPair(
+  session: SplitSession,
+  fromMemberId: string,
+  toMemberId: string
+): ItemizedExpenseBreakdown[] {
+  const result: ItemizedExpenseBreakdown[] = [];
+  const memberMap = new Map(session.members.map((m) => [m.id, m]));
+
+  for (const exp of session.expenses) {
+    const toPaidEntry = exp.paidBy?.find((p) => p.memberId === toMemberId && p.amount > 0);
+    const fromPaidEntry = exp.paidBy?.find((p) => p.memberId === fromMemberId && p.amount > 0);
+
+    // Case 1: toMember paid upfront, fromMember (or their dependent) participated in split
+    const fromSplit = exp.splits?.find((s) => {
+      if (s.memberId === fromMemberId) return true;
+      const m = memberMap.get(s.memberId);
+      return m?.isDependent && m?.primaryPayerMemberId === fromMemberId;
+    });
+
+    if (toPaidEntry && fromSplit) {
+      result.push({
+        expenseId: exp.id,
+        title: exp.title,
+        date: exp.date,
+        category: exp.category,
+        totalAmount: exp.amount,
+        currency: exp.currency,
+        shareAmount: fromSplit.amount,
+        settled: !!fromSplit.settled,
+        settledAt: fromSplit.settledAt,
+        payerName: memberMap.get(toMemberId)?.name || 'Payer',
+        isDirectPayer: false,
+      });
+      continue;
+    }
+
+    // Case 2: fromMember paid upfront, toMember participated (offsetting credit)
+    const toSplit = exp.splits?.find((s) => {
+      if (s.memberId === toMemberId) return true;
+      const m = memberMap.get(s.memberId);
+      return m?.isDependent && m?.primaryPayerMemberId === toMemberId;
+    });
+
+    if (fromPaidEntry && toSplit) {
+      result.push({
+        expenseId: exp.id,
+        title: exp.title,
+        date: exp.date,
+        category: exp.category,
+        totalAmount: exp.amount,
+        currency: exp.currency,
+        shareAmount: toSplit.amount,
+        settled: !!toSplit.settled,
+        settledAt: toSplit.settledAt,
+        payerName: memberMap.get(fromMemberId)?.name || 'Payer',
+        isDirectPayer: true,
+      });
+    }
+  }
+
+  // Sort newest expenses first
+  return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 /**

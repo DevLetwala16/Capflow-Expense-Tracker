@@ -26,6 +26,21 @@ describe("Splitter QR Scanner Utility", () => {
     expect(extractSessionIdFromQR(text)).toBe("CAP-SPLIT-1234-A");
   });
 
+  test("extracts CAP@ format session ID preserving mixed-case from query parameter", () => {
+    const url = "https://capflow.app/budgets/splitter?join=CAP@a8K2Xp9q";
+    expect(extractSessionIdFromQR(url)).toBe("CAP@a8K2Xp9q");
+  });
+
+  test("extracts CAP@ format session ID from URL path segment", () => {
+    const url = "https://capflow.app/budgets/splitter/CAP%40m7N3xL1z";
+    expect(extractSessionIdFromQR(url)).toBe("CAP@m7N3xL1z");
+  });
+
+  test("extracts CAP@ format session ID from raw text", () => {
+    const raw = "Join room: CAP@9bX1kP2w now!";
+    expect(extractSessionIdFromQR(raw)).toBe("CAP@9bX1kP2w");
+  });
+
   test("returns empty string on empty input", () => {
     expect(extractSessionIdFromQR("")).toBe("");
   });

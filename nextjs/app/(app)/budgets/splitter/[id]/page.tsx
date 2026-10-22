@@ -23,6 +23,8 @@ import {
   Edit2,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   TrendingUp,
   AlertTriangle,
   Lock,
@@ -37,6 +39,8 @@ import {
   calculateMemberNetPositions,
   simplifyDebts,
   formatSplitCurrency,
+  getExpenseMemberStatus,
+  getItemizedExpensesForPair,
 } from "@/lib/splitter/debtEngine";
 import {
   generateSplitterReportPDF,
@@ -80,6 +84,7 @@ export default function SplitterSessionDashboard() {
     addOrUpdateExpense,
     deleteExpense,
     recordSettlement,
+    toggleSettleExpenseShare,
     updateSession,
     deleteSession,
     startRealtimeSync,
@@ -95,6 +100,37 @@ export default function SplitterSessionDashboard() {
   const [editingExpense, setEditingExpense] = useState<SplitExpenseItem | null>(null);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [suggestedSettlement, setSuggestedSettlement] = useState<SettlementTransaction | null>(null);
+
+  // Expanded itemized view state for Expenses tab & Roadmap tab
+  const [expandedExpenseIds, setExpandedExpenseIds] = useState<Set<string>>(new Set());
+  const [expandedRoadmapIndices, setExpandedRoadmapIndices] = useState<Set<number>>(new Set());
+
+  const toggleExpenseExpansion = (id: string) => {
+    setExpandedExpenseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleRoadmapExpansion = (idx: number) => {
+    setExpandedRoadmapIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const handleSettleExpenseShare = async (expenseId: string, memberId: string) => {
+    if (!activeSession) return;
+    try {
+      await toggleSettleExpenseShare(activeSession.sessionId, expenseId, memberId);
+    } catch (e) {
+      console.error("Failed to settle expense share:", e);
+    }
+  };
 
   // Date filtering state for export & share
   const [exportFilterMode, setExportFilterMode] = useState<"whole" | "last_month" | "custom">("whole");
@@ -701,97 +737,247 @@ export default function SplitterSessionDashboard() {
                     .map((p) => `${memberNameMap.get(p.memberId) || "Member"}`)
                     .join(", ");
 
+                  const isExpanded = expandedExpenseIds.has(exp.id);
+                  const totalSplits = exp.splits.length;
+                  const settledSplits = exp.splits.filter((s) => {
+                    const member = activeSession.members.find((m) => m.id === s.memberId);
+                    if (!member) return false;
+                    const status = getExpenseMemberStatus(exp, member, activeSession.members);
+                    return status.status === "settled" || status.status === "paid";
+                  }).length;
+                  const allSettled = settledSplits === totalSplits && totalSplits > 0;
+
                   return (
                     <motion.div
                       key={exp.id}
                       layout
-                      className="p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-start justify-between gap-3 hover:border-[#6366F1]/30 transition-all shadow-sm"
+                      className="p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] hover:border-[#6366F1]/40 transition-all shadow-sm space-y-3"
                     >
-                      <div className="flex items-start gap-3 min-w-0">
-                        {/* Receipt Thumbnail if available */}
-                        {exp.receiptImage ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewImage(exp.receiptImage!)}
-                            className="w-12 h-12 rounded-xl overflow-hidden border border-[var(--border-color)] flex-shrink-0 hover:opacity-80 transition-opacity"
-                            title="View receipt"
-                          >
-                            <img
-                              src={exp.receiptImage}
-                              alt="Receipt"
-                              className="w-full h-full object-cover"
-                            />
-                          </button>
-                        ) : (
-                          <div className="w-10 h-10 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center text-[#6366F1] flex-shrink-0">
-                            <Receipt size={18} />
-                          </div>
-                        )}
+                      {/* Top Clickable Header */}
+                      <div
+                        onClick={() => toggleExpenseExpansion(exp.id)}
+                        className="flex items-start justify-between gap-3 cursor-pointer select-none"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          {/* Receipt Thumbnail if available */}
+                          {exp.receiptImage ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewImage(exp.receiptImage!);
+                              }}
+                              className="w-12 h-12 rounded-xl overflow-hidden border border-[var(--border-color)] flex-shrink-0 hover:opacity-80 transition-opacity"
+                              title="View receipt"
+                            >
+                              <img
+                                src={exp.receiptImage}
+                                alt="Receipt"
+                                className="w-full h-full object-cover"
+                              />
+                            </button>
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center text-[#6366F1] flex-shrink-0">
+                              <Receipt size={18} />
+                            </div>
+                          )}
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-[var(--text-primary)] truncate">
-                              {exp.title}
-                            </h4>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--text-secondary)] flex-shrink-0">
-                              {exp.category}
-                            </span>
-                          </div>
-
-                          {/* Payer & Creator Attribution */}
-                          <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--text-secondary)] mt-1">
-                            <span>
-                              Paid by{" "}
-                              <strong className="text-[var(--text-primary)]">
-                                {payerSummary}
-                              </strong>
-                            </span>
-                            <span>•</span>
-                            <span>
-                              Logged by{" "}
-                              <span className="text-[#6366F1] font-semibold">
-                                {exp.createdBy?.name || "Member"}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-[var(--text-primary)] truncate">
+                                {exp.title}
+                              </h4>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--text-secondary)] flex-shrink-0">
+                                {exp.category}
                               </span>
-                            </span>
-                          </div>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                                  allSettled
+                                    ? "bg-[#10B981]/15 text-[#10B981]"
+                                    : "bg-[#F59E0B]/15 text-[#F59E0B]"
+                                }`}
+                              >
+                                {allSettled ? "Settled ✓" : `${totalSplits - settledSplits} Pending`}
+                              </span>
+                            </div>
 
-                          <div className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                            {new Date(exp.date).toLocaleDateString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}{" "}
-                            · {exp.splits.length} participants ({exp.splitMode} split)
+                            {/* Payer & Creator Attribution */}
+                            <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--text-secondary)] mt-1">
+                              <span>
+                                Paid by{" "}
+                                <strong className="text-[var(--text-primary)]">
+                                  {payerSummary}
+                                </strong>
+                              </span>
+                              <span>•</span>
+                              <span>
+                                Logged by{" "}
+                                <span className="text-[#6366F1] font-semibold">
+                                  {exp.createdBy?.name || "Member"}
+                                </span>
+                              </span>
+                            </div>
+
+                            <div className="text-[10px] text-[var(--text-secondary)] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                              <span>
+                                {new Date(exp.date).toLocaleDateString("en-IN", {
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <span>·</span>
+                              <span>
+                                {exp.splits.length} participants ({exp.splitMode} split)
+                              </span>
+                              <span>·</span>
+                              <span className="text-[#6366F1] font-semibold">
+                                {isExpanded ? "Hide breakdown" : "Click to view status"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Amount & Actions */}
+                        <div className="text-right flex flex-col items-end gap-1.5 flex-shrink-0">
+                          <span className="text-sm font-extrabold text-[var(--text-primary)]">
+                            {formatSplitCurrency(exp.amount, exp.currency)}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingExpense(exp);
+                                  setShowAddExpenseModal(true);
+                                }}
+                                className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#6366F1] hover:bg-[var(--bg-primary)]"
+                                title="Edit expense"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteExpense(activeSession.sessionId, exp.id);
+                                }}
+                                className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#EF4444] hover:bg-[var(--bg-primary)]"
+                                title="Delete expense"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            <div className="p-1 text-[var(--text-secondary)]">
+                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Amount & Actions */}
-                      <div className="text-right flex flex-col items-end gap-1 flex-shrink-0">
-                        <span className="text-sm font-extrabold text-[var(--text-primary)]">
-                          {formatSplitCurrency(exp.amount, exp.currency)}
-                        </span>
-                        <div className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => {
-                              setEditingExpense(exp);
-                              setShowAddExpenseModal(true);
-                            }}
-                            className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#6366F1] hover:bg-[var(--bg-primary)]"
-                            title="Edit expense"
+                      {/* Expanded Breakdown: All included people's amount and paid status */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="pt-3 border-t border-[var(--border-color)] space-y-2 overflow-hidden"
                           >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => deleteExpense(activeSession.sessionId, exp.id)}
-                            className="p-1 rounded-lg text-[var(--text-secondary)] hover:text-[#EF4444] hover:bg-[var(--bg-primary)]"
-                            title="Delete expense"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--text-secondary)]">
+                              <span>Participant Payment Breakdown</span>
+                              <span className="text-[10px]">
+                                {settledSplits} of {totalSplits} settled
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {exp.splits.map((split) => {
+                                const member = activeSession.members.find((m) => m.id === split.memberId);
+                                if (!member) return null;
+                                const statusInfo = getExpenseMemberStatus(
+                                  exp,
+                                  member,
+                                  activeSession.members
+                                );
+
+                                return (
+                                  <div
+                                    key={split.memberId}
+                                    className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between gap-2.5"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div
+                                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 shadow-sm"
+                                        style={{ backgroundColor: member.color }}
+                                      >
+                                        {member.name.charAt(0).toUpperCase()}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <p className="text-xs font-bold text-[var(--text-primary)] truncate">
+                                            {member.name}
+                                          </p>
+                                          {member.isDependent && (
+                                            <span className="text-[9px] font-semibold px-1 py-0.2 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
+                                              Dependent
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[10px] text-[var(--text-secondary)]">
+                                          {member.handle}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <span className="text-xs font-extrabold text-[var(--text-primary)] block">
+                                          {formatSplitCurrency(split.amount, exp.currency)}
+                                        </span>
+                                        <span
+                                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block ${statusInfo.badgeClass}`}
+                                        >
+                                          {statusInfo.label}
+                                        </span>
+                                      </div>
+
+                                      {statusInfo.canMarkSettled && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSettleExpenseShare(exp.id, split.memberId);
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg bg-[#10B981] text-white text-[11px] font-bold hover:bg-[#059669] active:scale-95 flex items-center gap-1 shadow-sm transition-all"
+                                          title="Mark this participant's share as settled"
+                                        >
+                                          <Check size={11} strokeWidth={2.5} />
+                                          <span>Mark Settled</span>
+                                        </button>
+                                      )}
+
+                                      {statusInfo.canUndo && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSettleExpenseShare(exp.id, split.memberId);
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
+                                          title="Undo settlement for this participant"
+                                        >
+                                          Undo
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   );
                 })}
@@ -803,15 +989,7 @@ export default function SplitterSessionDashboard() {
         {/* ── Tab 2: Settlement Roadmap (Min-Cash-Flow) ── */}
         {activeTab === "roadmap" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Optimized Settlement Roadmap
-                </h3>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Greedy Min-Cash-Flow algorithm: Absolute minimum transactions to settle all debts.
-                </p>
-              </div>
+            <div className="flex items-center justify-end">
               <button
                 onClick={() => {
                   setSuggestedSettlement(null);
@@ -838,56 +1016,176 @@ export default function SplitterSessionDashboard() {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {simplifiedDebts.map((st, idx) => (
-                  <motion.div
-                    key={idx}
-                    layout
-                    className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/30 transition-all space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3"
-                  >
-                    <div className="flex items-start sm:items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
-                        <HandCoins size={18} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
-                          <span className="font-bold text-[#EF4444] break-words">
-                            {st.fromMemberName}
-                          </span>
-                          <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
-                            pays
-                          </span>
-                          <span className="font-bold text-[#10B981] break-words">
-                            {st.toMemberName}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                          Simplified peer-to-peer settlement
-                        </p>
-                      </div>
-                    </div>
+                {simplifiedDebts.map((st, idx) => {
+                  const isExpanded = expandedRoadmapIndices.has(idx);
+                  const itemizedExpenses = getItemizedExpensesForPair(
+                    activeSession,
+                    st.fromMemberId,
+                    st.toMemberId
+                  );
+                  const pendingCount = itemizedExpenses.filter((i) => !i.settled).length;
 
-                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
-                      <div className="flex flex-col sm:items-end">
-                        <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
-                          Settlement Amount
-                        </span>
-                        <span className="text-base font-extrabold text-[var(--text-primary)]">
-                          {formatSplitCurrency(st.amount, activeSession.currency)}
-                        </span>
+                  return (
+                    <motion.div
+                      key={idx}
+                      layout
+                      className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/40 transition-all space-y-3 cursor-pointer select-none"
+                      onClick={() => toggleRoadmapExpansion(idx)}
+                    >
+                      <div className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
+                        <div className="flex items-start sm:items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+                            <HandCoins size={18} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
+                              <span className="font-bold text-[#EF4444] break-words">
+                                {st.fromMemberName}
+                              </span>
+                              <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
+                                pays
+                              </span>
+                              <span className="font-bold text-[#10B981] break-words">
+                                {st.toMemberName}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[var(--text-secondary)] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                              <span>Simplified peer-to-peer settlement</span>
+                              <span>·</span>
+                              <span className="text-[#6366F1] font-semibold">
+                                {itemizedExpenses.length}{" "}
+                                {itemizedExpenses.length === 1 ? "expense item" : "itemized expenses"}{" "}
+                                ({isExpanded ? "Hide breakdown" : "Click to view & settle items"})
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
+                          <div className="flex flex-col sm:items-end">
+                            <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
+                              Settlement Amount
+                            </span>
+                            <span className="text-base font-extrabold text-[var(--text-primary)]">
+                              {formatSplitCurrency(st.amount, activeSession.currency)}
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSuggestedSettlement(st);
+                              setShowSettlementModal(true);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                            title="Settle full balance between members"
+                          >
+                            <Check size={13} strokeWidth={2.5} />
+                            <span>Mark as Settled</span>
+                          </button>
+                          <div className="p-1 text-[var(--text-secondary)]">
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </div>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          setSuggestedSettlement(st);
-                          setShowSettlementModal(true);
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
-                      >
-                        <Check size={13} strokeWidth={2.5} />
-                        <span>Mark as Settled</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
+
+                      {/* Expandable Individual Itemized Expenses Breakdown */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="pt-3 border-t border-[var(--border-color)] space-y-2 overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--text-secondary)]">
+                              <span>Individual Itemized Expenses Status</span>
+                              <span className="text-[10px] text-[#6366F1] font-bold">
+                                {pendingCount} pending · {itemizedExpenses.length - pendingCount} settled
+                              </span>
+                            </div>
+
+                            {itemizedExpenses.length === 0 ? (
+                              <p className="text-xs text-[var(--text-secondary)] py-1.5 italic bg-[var(--bg-primary)] px-3 rounded-xl border border-[var(--border-color)]/60">
+                                This balance reflects consolidated net adjustments across group expenses. You can settle it using the button above.
+                              </p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {itemizedExpenses.map((item) => (
+                                  <div
+                                    key={item.expenseId}
+                                    className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between gap-2.5"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-bold text-[var(--text-primary)] truncate">
+                                          {item.title}
+                                        </span>
+                                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
+                                          {item.category}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                                        {new Date(item.date).toLocaleDateString("en-IN", {
+                                          day: "numeric",
+                                          month: "short",
+                                        })}{" "}
+                                        · {item.payerName} paid total{" "}
+                                        {formatSplitCurrency(item.totalAmount, item.currency)}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <div className="text-right">
+                                        <span className="text-xs font-extrabold text-[var(--text-primary)] block">
+                                          {formatSplitCurrency(item.shareAmount, item.currency)}
+                                        </span>
+                                        <span
+                                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block ${
+                                            item.settled
+                                              ? "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30"
+                                              : "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
+                                          }`}
+                                        >
+                                          {item.settled ? "Settled ✓" : "Pending"}
+                                        </span>
+                                      </div>
+
+                                      {item.settled ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleSettleExpenseShare(item.expenseId, st.fromMemberId)
+                                          }
+                                          className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
+                                          title="Undo settlement for this itemized expense"
+                                        >
+                                          Undo
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleSettleExpenseShare(item.expenseId, st.fromMemberId)
+                                          }
+                                          className="px-2.5 py-1 rounded-lg bg-[#10B981] text-white text-[10px] font-bold hover:bg-[#059669] active:scale-95 flex items-center gap-1 shadow-sm transition-all"
+                                          title="Mark this individual itemized expense as settled"
+                                        >
+                                          <Check size={11} strokeWidth={2.5} />
+                                          <span>Mark Settled</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
 

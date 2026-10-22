@@ -103,7 +103,10 @@ export function JoinSessionModal({
   // Execute group join
   const executeJoin = useCallback(
     async (targetSessionId: string, customName?: string) => {
-      const cleanSessionId = targetSessionId.trim().toUpperCase();
+      const rawTrimmed = targetSessionId.trim();
+      const cleanSessionId = /^CAP@/i.test(rawTrimmed)
+        ? `CAP@${rawTrimmed.slice(4)}`
+        : rawTrimmed.toUpperCase();
       const resolvedName = customName || displayName.trim() || currentUser?.name || "Guest";
 
       if (!cleanSessionId) {
@@ -670,10 +673,17 @@ export function JoinSessionModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. CAP-SPLIT-9821-X"
+                    placeholder="e.g. CAP@a8K2Xp9q or CAP-SPLIT-9821-X"
                     value={sessionId}
-                    onChange={(e) => setSessionId(e.target.value.toUpperCase())}
-                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-bold tracking-wider text-[#6366F1] outline-none focus:border-[#6366F1] uppercase text-center"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^CAP@/i.test(val)) {
+                        setSessionId(`CAP@${val.slice(4)}`);
+                      } else {
+                        setSessionId(val);
+                      }
+                    }}
+                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-bold tracking-wider text-[#6366F1] outline-none focus:border-[#6366F1] font-mono text-center"
                     autoFocus
                   />
                 </div>

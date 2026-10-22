@@ -574,7 +574,7 @@ export function generateWhatsAppSummary(
   if (options?.endDate) queryParams.set('endDate', options.endDate);
   const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
 
-  text += `\n📄 View / Download Verified PDF Statement:\n${origin}/api/splitter/sessions/${session.sessionId}/pdf${qs}\n`;
-  text += `\n🔗 Join or track live in CapFlow:\n${origin}/budgets/splitter?join=${session.sessionId}`;
+  text += `\n📄 View / Download Verified PDF Statement:\n${origin}/api/splitter/sessions/${encodeURIComponent(session.sessionId)}/pdf${qs}\n`;
+  text += `\n🔗 Join or track live in CapFlow:\n${origin}/budgets/splitter?join=${encodeURIComponent(session.sessionId)}`;
   return text;
 }

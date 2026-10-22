@@ -22,7 +22,11 @@ export async function POST(
     const body = await req.json();
 
     const session = await SplitSessionModel.findOne({
-      $or: [{ sessionId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
     });
 
     if (!session) {
@@ -119,6 +123,9 @@ export async function POST(
       splits: finalSplits.map((s: any) => ({
         memberId: s.memberId,
         amount: roundTo2Decimals(s.amount),
+        settled: !!s.settled,
+        settledAt: s.settledAt,
+        settlementId: s.settlementId,
       })),
       considerFamilyMembers: considerFamilyMembers !== undefined ? considerFamilyMembers : true,
       memberWeights: customMemberWeights,

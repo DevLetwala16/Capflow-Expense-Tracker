@@ -19,6 +19,7 @@ interface RecordSettlementModalProps {
     amount: number;
     notes?: string;
     date?: string;
+    expenseId?: string;
   }) => Promise<any>;
 }
 

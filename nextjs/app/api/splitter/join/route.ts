@@ -16,8 +16,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
     }
 
-    const cleanSessionId = sessionId.trim().toUpperCase();
-    const session = await SplitSessionModel.findOne({ sessionId: cleanSessionId });
+    const trimmed = sessionId.trim();
+    const cleanSessionId = /^CAP@/i.test(trimmed)
+      ? `CAP@${trimmed.slice(4)}`
+      : trimmed.toUpperCase();
+
+    // Match exact sessionId or case-insensitive fallback
+    let session = await SplitSessionModel.findOne({ sessionId: cleanSessionId });
+    if (!session) {
+      session = await SplitSessionModel.findOne({
+        sessionId: {
+          $regex: new RegExp(`^${cleanSessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        },
+      });
+    }
 
     if (!session) {
       return NextResponse.json(

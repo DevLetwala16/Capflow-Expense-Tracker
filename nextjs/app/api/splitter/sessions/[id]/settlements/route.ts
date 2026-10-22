@@ -17,7 +17,11 @@ export async function POST(
     const body = await req.json();
 
     const session = await SplitSessionModel.findOne({
-      $or: [{ sessionId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }],
+      $or: [
+        { sessionId: id },
+        { sessionId: decodeURIComponent(id) },
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      ],
     });
 
     if (!session) {
@@ -62,6 +66,7 @@ export async function POST(
       amount: parsedAmount,
       date: body.date || now,
       notes,
+      expenseId: body.expenseId,
       recordedBy: recordedBy || {
         memberId: fromMemberId,
         name: fromMember.name,
@@ -70,6 +75,36 @@ export async function POST(
     };
 
     session.settlements.unshift(newSettlement);
+
+    // If specific expenseId provided, update that split to settled
+    if (body.expenseId) {
+      const exp = session.expenses.find((e: any) => e.id === body.expenseId);
+      if (exp) {
+        const split = exp.splits.find((s: any) => s.memberId === fromMemberId);
+        if (split) {
+          split.settled = true;
+          split.settledAt = now;
+          split.settlementId = settlementId;
+        }
+      }
+    } else {
+      // General settlement between fromMemberId and toMemberId:
+      // mark pending matching splits as settled up to settled amount
+      let remainingToSettle = parsedAmount;
+      for (const exp of session.expenses) {
+        if (remainingToSettle <= 0) break;
+        const toPaid = exp.paidBy?.some((p: any) => p.memberId === toMemberId);
+        if (toPaid) {
+          const split = exp.splits?.find((s: any) => s.memberId === fromMemberId && !s.settled);
+          if (split && split.amount <= remainingToSettle + 0.01) {
+            split.settled = true;
+            split.settledAt = now;
+            split.settlementId = settlementId;
+            remainingToSettle -= split.amount;
+          }
+        }
+      }
+    }
 
     // Audit log
     const auditLog: SplitAuditLog = {

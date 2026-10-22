@@ -68,6 +68,9 @@ const SplitExpenseItemSchema = new Schema<SplitExpenseItem>(
       {
         memberId: { type: String, required: true },
         amount: { type: Number, required: true },
+        settled: { type: Boolean, default: false },
+        settledAt: { type: String },
+        settlementId: { type: String },
         _id: false,
       },
     ],
@@ -90,6 +93,7 @@ const SplitSettlementSchema = new Schema<SplitSettlement>(
     amount: { type: Number, required: true },
     date: { type: String, required: true },
     notes: { type: String },
+    expenseId: { type: String },
     recordedBy: {
       memberId: { type: String, required: true },
       name: { type: String, required: true },

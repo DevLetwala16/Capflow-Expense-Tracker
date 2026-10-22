@@ -7,34 +7,54 @@ export function extractSessionIdFromQR(rawText: string): string {
   if (!rawText) return "";
   const text = rawText.trim();
 
+  // Helper to normalize session ID preserving mixed-case for CAP@ and uppercase for CAP-SPLIT
+  const normalizeId = (rawId: string): string => {
+    const trimmed = rawId.trim();
+    if (/^CAP@/i.test(trimmed)) {
+      return `CAP@${trimmed.slice(4)}`;
+    }
+    return trimmed.toUpperCase();
+  };
+
   // 1. Try URL parameter `?join=...` or `&join=...`
   try {
     const urlString = text.includes("://") ? text : `https://${text}`;
     const url = new URL(urlString);
     const joinParam = url.searchParams.get("join");
     if (joinParam) {
-      return joinParam.trim().toUpperCase();
+      return normalizeId(joinParam);
     }
 
     // 2. Try URL path /splitter/[id]
     const pathSegments = url.pathname.split("/").filter(Boolean);
     const lastSegment = pathSegments[pathSegments.length - 1];
-    if (lastSegment && /CAP-SPLIT-[A-Z0-9-]+/i.test(lastSegment)) {
-      const match = lastSegment.match(/CAP-SPLIT-[A-Z0-9-]+/i);
-      if (match) return match[0].toUpperCase();
+    if (lastSegment) {
+      const decoded = decodeURIComponent(lastSegment);
+      const capAtMatch = decoded.match(/CAP@[A-Za-z0-9]+/i);
+      if (capAtMatch) {
+        return `CAP@${capAtMatch[0].slice(4)}`;
+      }
+      const splitMatch = decoded.match(/CAP-SPLIT-[A-Z0-9-]+/i);
+      if (splitMatch) return splitMatch[0].toUpperCase();
     }
   } catch {
     // Ignore URL parse error
   }
 
-  // 3. Regex match for standard CapFlow session ID format (e.g. CAP-SPLIT-9821-X)
+  // 3. Regex match for CAP@ format
+  const capAtMatch = text.match(/CAP@[A-Za-z0-9]+/i);
+  if (capAtMatch) {
+    return `CAP@${capAtMatch[0].slice(4)}`;
+  }
+
+  // 4. Regex match for standard CapFlow session ID format (e.g. CAP-SPLIT-9821-X)
   const regexMatch = text.match(/CAP-SPLIT-[A-Z0-9-]+/i);
   if (regexMatch) {
     return regexMatch[0].toUpperCase();
   }
 
-  // 4. Return sanitized uppercase string
-  return text.toUpperCase();
+  // 5. Return sanitized string
+  return normalizeId(text);
 }
 
 /**
