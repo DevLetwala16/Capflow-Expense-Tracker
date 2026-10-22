@@ -444,15 +444,23 @@ export default function TransferPage() {
         throw new Error("Camera API is not supported on this browser or platform.");
       }
 
-      let stream: MediaStream;
+      let stream: MediaStream | null = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: targetMode } },
+          video: { facingMode: { ideal: targetMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
         });
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: targetMode },
-        });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: targetMode },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+      }
+
+      if (!stream) {
+        throw new Error("Unable to access video stream.");
       }
 
       streamRef.current = stream;
