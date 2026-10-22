@@ -57,6 +57,9 @@ export function JoinSessionModal({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const facingModeRef = useRef<"environment" | "user">("environment");
+  const rearDeviceIdRef = useRef<string | null>(null);
+  const frontDeviceIdRef = useRef<string | null>(null);
+  const currentDeviceIdRef = useRef<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -186,9 +189,81 @@ export function JoinSessionModal({
     [stopCamera, autoJoinDirectly, displayName, currentUser, executeJoin]
   );
 
-  // Start live video camera with robust facingMode & hardware device switching
+  // Query and accurately classify primary physical camera hardware devices
+  const refreshCameraDevices = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+      return { rearId: undefined, frontId: undefined, all: [] };
+    }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevs = devices.filter((d) => d.kind === "videoinput");
+
+      if (videoDevs.length === 0) return { rearId: undefined, frontId: undefined, all: [] };
+
+      const rears: MediaDeviceInfo[] = [];
+      const fronts: MediaDeviceInfo[] = [];
+
+      for (const dev of videoDevs) {
+        const label = (dev.label || "").toLowerCase();
+        const isBack =
+          label.includes("back") ||
+          label.includes("rear") ||
+          label.includes("environment") ||
+          label.includes("world") ||
+          label.includes("facing back") ||
+          label.includes("0, facing back");
+
+        const isFront =
+          label.includes("front") ||
+          label.includes("user") ||
+          label.includes("selfie") ||
+          label.includes("face") ||
+          label.includes("facing front") ||
+          label.includes("1, facing front");
+
+        if (isBack) {
+          rears.push(dev);
+        } else if (isFront) {
+          fronts.push(dev);
+        }
+      }
+
+      // Filter out auxiliary lenses (ultra-wide 0.5x, macro, telephoto 2x/3x, depth)
+      // Selecting these auxiliary lenses was what caused the camera to zoom in/out instead of switching!
+      const isPrimaryLens = (d: MediaDeviceInfo) => {
+        const l = (d.label || "").toLowerCase();
+        return (
+          !l.includes("wide") &&
+          !l.includes("ultra") &&
+          !l.includes("macro") &&
+          !l.includes("tele") &&
+          !l.includes("depth") &&
+          !l.includes("0.") &&
+          !l.includes("virtual")
+        );
+      };
+
+      const primaryRear = rears.find(isPrimaryLens) || rears[0];
+      const primaryFront = fronts.find(isPrimaryLens) || fronts[0];
+
+      // On Android/iOS:
+      // Device 0 is typically Back Camera (Camera 0)
+      // Device 1 is typically Front Camera (Camera 1)
+      const rearId = primaryRear?.deviceId || (rears.length > 0 ? rears[0].deviceId : videoDevs[0]?.deviceId);
+      const frontId = primaryFront?.deviceId || (fronts.length > 0 ? fronts[0].deviceId : videoDevs.length > 1 ? videoDevs[1]?.deviceId : undefined);
+
+      if (rearId) rearDeviceIdRef.current = rearId;
+      if (frontId) frontDeviceIdRef.current = frontId;
+
+      return { rearId, frontId, all: videoDevs };
+    } catch {
+      return { rearId: undefined, frontId: undefined, all: [] };
+    }
+  }, []);
+
+  // Start live video camera with strict rear <-> front hardware switching
   const startCamera = useCallback(
-    async (targetFacing?: "environment" | "user") => {
+    async (targetFacing?: "environment" | "user", targetDeviceId?: string) => {
       const mode = targetFacing || facingModeRef.current;
       setCameraError(null);
       setCameraStarting(true);
@@ -210,7 +285,7 @@ export function JoinSessionModal({
       }
 
       // Small hardware release interval for mobile camera sensors
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 80));
 
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -219,54 +294,73 @@ export function JoinSessionModal({
 
         let stream: MediaStream | null = null;
 
-        // Step A: Attempt exact facingMode (mandatory switch on mobile browsers)
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { exact: mode },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-          });
-        } catch {
-          // Step B: Query enumerated video input devices to switch deviceId
+        // Strategy 1: Explicit physical camera device ID if provided
+        if (targetDeviceId) {
           try {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevs = devices.filter((d) => d.kind === "videoinput");
-            if (videoDevs.length > 1) {
-              const matchedDev = videoDevs.find((d) =>
-                mode === "environment"
-                  ? /back|rear|environment|world/i.test(d.label)
-                  : /front|user|selfie|face/i.test(d.label)
-              ) || (mode === "environment" ? videoDevs[videoDevs.length - 1] : videoDevs[0]);
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: targetDeviceId } },
+            });
+          } catch (devErr) {
+            console.warn("[Camera] Exact deviceId failed, falling back to facingMode:", devErr);
+          }
+        }
 
-              if (matchedDev && matchedDev.deviceId) {
-                stream = await navigator.mediaDevices.getUserMedia({
-                  video: {
-                    deviceId: { exact: matchedDev.deviceId },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                  },
-                });
-              }
+        // Strategy 2: Request by facingMode without rigid landscape dimensions (which fail on portrait phones)
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { exact: mode } },
+            });
+          } catch {}
+        }
+
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: mode },
+            });
+          } catch {}
+        }
+
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: mode } },
+            });
+          } catch {}
+        }
+
+        // Strategy 3: Unconstrained fallback
+        if (!stream) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+
+        // Calibrate actual hardware sensor & auto-correct if browser inverted front/rear
+        const track = stream.getVideoTracks()[0];
+        const settings = track?.getSettings ? track.getSettings() : ({} as any);
+        const actualDeviceId = settings.deviceId;
+        const actualFacing = settings.facingMode;
+
+        if (actualDeviceId) {
+          currentDeviceIdRef.current = actualDeviceId;
+        }
+
+        // Query fresh device list now that permissions are guaranteed active
+        const { rearId, frontId } = await refreshCameraDevices();
+
+        // If the scanner requested REAR (environment) but the browser opened FRONT (user),
+        // auto-correct to the actual rear hardware sensor!
+        if (mode === "environment" && actualFacing === "user" && rearId && rearId !== actualDeviceId) {
+          try {
+            track.stop();
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: rearId } },
+            });
+            const newTrack = stream.getVideoTracks()[0];
+            if (newTrack?.getSettings()?.deviceId) {
+              currentDeviceIdRef.current = newTrack.getSettings().deviceId!;
             }
           } catch {}
-
-          // Step C: Fallback to ideal facingMode
-          if (!stream) {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                  facingMode: { ideal: mode },
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
-                },
-              });
-            } catch {
-              // Step D: Final fallback to unconstrained video
-              stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            }
-          }
         }
 
         streamRef.current = stream;
@@ -315,7 +409,7 @@ export function JoinSessionModal({
         setCameraStarting(false);
       }
     },
-    [handleCodeDetected]
+    [handleCodeDetected, refreshCameraDevices]
   );
 
   // Auto-start camera when modal opens in "scan" mode
@@ -338,10 +432,35 @@ export function JoinSessionModal({
   }, [cameraActive]);
 
   const handleToggleFacingMode = async () => {
-    const next = facingMode === "environment" ? "user" : "environment";
-    setFacingMode(next);
-    facingModeRef.current = next;
-    await startCamera(next);
+    const currentMode = facingModeRef.current;
+    const nextMode: "environment" | "user" = currentMode === "environment" ? "user" : "environment";
+
+    setFacingMode(nextMode);
+    facingModeRef.current = nextMode;
+
+    // Refresh devices to get verified rear and front IDs
+    const { rearId, frontId, all } = await refreshCameraDevices();
+
+    let targetDevId: string | undefined;
+    if (nextMode === "user") {
+      // Switching to FRONT camera
+      targetDevId = frontId;
+      if (!targetDevId && all.length > 1) {
+        const alt = all.find((d) => d.deviceId !== currentDeviceIdRef.current && /front|user|selfie/i.test(d.label)) ||
+                    all.find((d) => d.deviceId !== currentDeviceIdRef.current);
+        targetDevId = alt?.deviceId;
+      }
+    } else {
+      // Switching to REAR camera
+      targetDevId = rearId;
+      if (!targetDevId && all.length > 1) {
+        const alt = all.find((d) => d.deviceId !== currentDeviceIdRef.current && /back|rear|environment/i.test(d.label)) ||
+                    all.find((d) => d.deviceId !== currentDeviceIdRef.current);
+        targetDevId = alt?.deviceId;
+      }
+    }
+
+    await startCamera(nextMode, targetDevId);
   };
 
   // Manual Form Submission
@@ -511,7 +630,7 @@ export function JoinSessionModal({
                         className="px-2.5 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-[11px] font-semibold hover:bg-black/80 transition-colors border border-white/20 flex items-center gap-1.5"
                       >
                         <RefreshCw size={12} />
-                        Flip Camera
+                        {facingMode === "environment" ? "Flip to Front" : "Flip to Rear"}
                       </button>
                       <button
                         type="button"
