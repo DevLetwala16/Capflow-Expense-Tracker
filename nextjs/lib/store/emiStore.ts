@@ -18,6 +18,7 @@ interface EMIState {
   markInstallmentPaid: (id: number) => Promise<void>;
 
   // ── Computed helpers (call get() internally) ──────────────────────────────
+  syncToServer: (email?: string) => Promise<void>;
   /** EMIs whose dueDay is within `leadDays` calendar days of today (inclusive) */
   dueToday: (leadDays?: number) => EMI[];
   /** EMIs that were due earlier this month and are not yet fully paid */
@@ -103,6 +104,7 @@ export const useEMIStore = create<EMIState>((set, get) => ({
     const emi = await db.emis.get(id as number);
     if (emi) {
       set((state) => ({ emis: [...state.emis, emi] }));
+      get().syncToServer().catch(() => {});
     }
     return id as number;
   },
@@ -115,11 +117,13 @@ export const useEMIStore = create<EMIState>((set, get) => ({
         e.id === id ? { ...e, ...updates, updatedAt: now } : e
       ),
     }));
+    get().syncToServer().catch(() => {});
   },
 
   deleteEMI: async (id: number) => {
     await db.emis.delete(id);
     set((state) => ({ emis: state.emis.filter((e) => e.id !== id) }));
+    get().syncToServer().catch(() => {});
   },
 
   markInstallmentPaid: async (id: number) => {
@@ -127,6 +131,28 @@ export const useEMIStore = create<EMIState>((set, get) => ({
     if (!emi) return;
     const newPaid = Math.min(emi.paidInstallments + 1, emi.totalInstallments);
     await get().updateEMI(id, { paidInstallments: newPaid });
+  },
+
+  syncToServer: async (email?: string) => {
+    if (typeof window === "undefined") return;
+    const targetEmail =
+      email ||
+      JSON.parse(localStorage.getItem("capflow-auth") || "{}")?.state?.user?.email;
+    if (!targetEmail) return;
+
+    try {
+      await fetch("/api/emis/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: targetEmail,
+          emis: get().emis,
+          enableSync: true,
+        }),
+      });
+    } catch (err) {
+      console.warn("[EMIStore] Background sync failed:", err);
+    }
   },
 
   // ── Computed helpers ──────────────────────────────────────────────────────

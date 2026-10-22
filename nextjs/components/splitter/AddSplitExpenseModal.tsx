@@ -9,6 +9,8 @@ import {
   Check,
   AlertCircle,
   Users,
+  User,
+  RotateCcw,
   CreditCard,
   Calendar,
   Tag,
@@ -761,15 +763,23 @@ export function AddSplitExpenseModal({
                           <span>Consider Family Members</span>
                         </label>
                         <span
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 ${
                             considerFamilyMembers
                               ? "bg-[#10B981]/15 text-[#10B981]"
                               : "bg-[var(--border-color)] text-[var(--text-secondary)]"
                           }`}
                         >
-                          {considerFamilyMembers
-                            ? `👨‍👩‍👧 ${totalActiveHeadcount} Total Persons`
-                            : `👤 1 Each (${selectedParticipants.length} persons)`}
+                          {considerFamilyMembers ? (
+                            <>
+                              <Users size={11} className="text-[#10B981]" />
+                              <span>{totalActiveHeadcount} Total Persons</span>
+                            </>
+                          ) : (
+                            <>
+                              <User size={11} className="text-[var(--text-secondary)]" />
+                              <span>1 Each ({selectedParticipants.length} persons)</span>
+                            </>
+                          )}
                         </span>
                       </div>
                       <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
@@ -821,26 +831,28 @@ export function AddSplitExpenseModal({
                             <button
                               type="button"
                               onClick={() => handleApplyPreset("family")}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                                 considerFamilyMembers
                                   ? "bg-[#6366F1]/15 text-[#6366F1] border-[#6366F1]/30"
                                   : "bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--text-primary)]"
                               }`}
                               title="Split by each member's family headcount"
                             >
-                              👨‍👩‍👧 By Family Size
+                              <Users size={12} className={considerFamilyMembers ? "text-[#6366F1]" : "text-[var(--text-secondary)]"} />
+                              <span>By Family Size</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleApplyPreset("equal")}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                                 !considerFamilyMembers
                                   ? "bg-[#6366F1]/15 text-[#6366F1] border-[#6366F1]/30"
                                   : "bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--text-primary)]"
                               }`}
                               title="Ignore kids / split 1 share per member"
                             >
-                              👤 1 Share Each (Exclude Kids)
+                              <User size={12} className={!considerFamilyMembers ? "text-[#6366F1]" : "text-[var(--text-secondary)]"} />
+                              <span>1 Share Each (Exclude Kids)</span>
                             </button>
                           </>
                         )}
@@ -848,9 +860,10 @@ export function AddSplitExpenseModal({
                       <button
                         type="button"
                         onClick={handleResetToEqual}
-                        className="text-[#6366F1] font-bold hover:underline flex items-center gap-1 cursor-pointer ml-auto text-[11px]"
+                        className="text-[#6366F1] font-bold hover:underline inline-flex items-center gap-1 cursor-pointer ml-auto text-[11px]"
                       >
-                        ⚡ Reset
+                        <RotateCcw size={12} />
+                        <span>Reset</span>
                       </button>
                     </div>
                   </div>
@@ -906,8 +919,9 @@ export function AddSplitExpenseModal({
                                     >
                                       -
                                     </button>
-                                    <span className="text-[9px] font-bold text-[#10B981] min-w-[12px] text-center">
-                                      👨‍👩‍👦 {memberWeight}
+                                    <span className="text-[9px] font-bold text-[#10B981] min-w-[12px] inline-flex items-center gap-1">
+                                      <Users size={10} className="text-[#10B981]" />
+                                      <span>{memberWeight}</span>
                                     </span>
                                     <button
                                       type="button"

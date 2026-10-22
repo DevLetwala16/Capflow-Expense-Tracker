@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
@@ -6,15 +7,37 @@ import { sendEMIReminder } from "@/lib/email/mailer";
 
 export const dynamic = "force-dynamic";
 
-// ─── GET /api/cron/emi-reminders ──────────────────────────────────────────────
-// Callable by Vercel Cron (daily at 08:00 UTC) or a manual HTTP GET.
+// ─── GET & POST /api/cron/emi-reminders ──────────────────────────────────────────────
+// Callable by Vercel Cron (daily at 08:00 UTC), manual HTTP, or authenticated call.
 // Sends EMI due-date reminder emails to users who have opted in.
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // ── 1. Verify CRON_SECRET ─────────────────────────────────────────────────
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
+  return handleEmiReminders(req);
+}
 
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  return handleEmiReminders(req);
+}
+
+async function handleEmiReminders(req: NextRequest): Promise<NextResponse> {
+  // ── 1. Verify Authorization (Bearer token, query secret, or authenticated cookie) ──
+  const authHeader = req.headers.get("authorization");
+  const urlSecret = req.nextUrl.searchParams.get("secret");
+  const cronSecret = process.env.CRON_SECRET;
+  const token = req.cookies.get("capflow_token")?.value;
+
+  const isCronAuthorized =
+    Boolean(cronSecret) &&
+    (authHeader === `Bearer ${cronSecret}` || urlSecret === cronSecret);
+
+  let sessionEmail: string | null = null;
+  if (!isCronAuthorized && token && process.env.JWT_SECRET) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET) as { email: string };
+      sessionEmail = decoded.email?.toLowerCase();
+    } catch {}
+  }
+
+  if (!isCronAuthorized && !sessionEmail) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -22,10 +45,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // ── 2. Connect to MongoDB ───────────────────────────────────────────────
     await connectMongoDB();
 
-    // Fetch all users who have opted into EMI reminder emails
-    const users = await User.find({
+    // Fetch all users who have opted into EMI reminder emails (or specific session user)
+    const userFilter: Record<string, any> = {
       "preferences.emailNotifications.emiReminders": true,
-    }).lean();
+    };
+    if (sessionEmail) {
+      userFilter.email = sessionEmail;
+    }
+    const users = await User.find(userFilter).lean();
 
     const today = new Date();
     let processedUsers = 0;

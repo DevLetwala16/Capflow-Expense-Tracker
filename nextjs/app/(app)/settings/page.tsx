@@ -51,6 +51,12 @@ import {
 import { CurrencySelectorModal } from "@/components/shared/CurrencySelectorModal";
 import { CURRENCIES, useExchangeRateStore } from "@/lib/currency/exchangeRates";
 import { useTransactionStore } from "@/lib/store/transactionStore";
+import { useEMIStore } from "@/lib/store/emiStore";
+import {
+  sendNativeNotification,
+  requestNotificationPermission,
+} from "@/lib/notifications/notificationEngine";
+import { DevicePermissionModal } from "@/components/shared/DevicePermissionModal";
 
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 
@@ -315,6 +321,139 @@ export default function SettingsPage() {
   const [pinError, setPinError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { emis } = useEMIStore();
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [testingNotif, setTestingNotif] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+
+  // Sync preferences with backend
+  const handleToggleEmailAlerts = async (val: boolean) => {
+    setEmailAlertsEnabled(val);
+    setNotifEMIReminders(val);
+    if (user?.email) {
+      try {
+        await fetch("/api/user/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email, emiReminders: val }),
+        });
+        showToast(val ? "Email alerts enabled for EMI dues" : "Email alerts disabled");
+      } catch (e) {
+        console.warn("Failed updating email alerts preference", e);
+      }
+    }
+  };
+
+  const handleTogglePushNotifications = async (val: boolean) => {
+    if (val) {
+      const res = await requestNotificationPermission();
+      if (res === "granted") {
+        setPushNotificationsEnabled(true);
+        showToast("Local push notifications active");
+      } else {
+        setPushNotificationsEnabled(false);
+        showToast("Notification permission not granted in browser");
+      }
+    } else {
+      setPushNotificationsEnabled(false);
+      showToast("Local push notifications disabled");
+    }
+  };
+
+  const handleToggleEMISync = async (val: boolean) => {
+    setNotifEMISync(val);
+    if (user?.email) {
+      try {
+        await fetch("/api/user/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: user.email,
+            emiEmailSync: val,
+            emiReminders: val ? true : emailAlertsEnabled,
+          }),
+        });
+
+        if (val) {
+          await fetch("/api/emis/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: user.email,
+              emis,
+              enableSync: true,
+            }),
+          });
+          showToast("EMIs synchronized with cloud reminder server!");
+        } else {
+          showToast("EMI server sync disabled");
+        }
+      } catch (e) {
+        console.warn("Failed syncing EMIs to server", e);
+      }
+    }
+  };
+
+  const handleToggleMonthlyStatement = async (val: boolean) => {
+    setNotifMonthlyStatement(val);
+    if (user?.email) {
+      try {
+        await fetch("/api/user/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email, monthlyStatement: val }),
+        });
+        showToast(val ? "Monthly email statement enabled" : "Monthly email statement disabled");
+      } catch (e) {
+        console.warn("Failed updating monthly statement preference", e);
+      }
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setTestingNotif(true);
+    try {
+      await sendNativeNotification("🔔 CapFlow Alert Test", {
+        body: "Your device notifications & vibrations are working! You'll receive daily expense prompts & EMI alerts.",
+        inAppType: "success",
+      });
+      showToast("Test notification dispatched to your device!");
+    } catch {
+      showToast("Could not send test notification");
+    } finally {
+      setTestingNotif(false);
+    }
+  };
+
+  const handleTestEmail = async (type: "emi" | "summary") => {
+    if (!user?.email) {
+      showToast("Please sign in with your email first to receive test emails.");
+      return;
+    }
+    setTestingEmail(true);
+    try {
+      const res = await fetch("/api/notifications/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          name: user.name,
+          type,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || "Test email delivered successfully!");
+      } else {
+        showToast(data.error || "Failed sending test email");
+      }
+    } catch {
+      showToast("Network error sending test email");
+    } finally {
+      setTestingEmail(false);
+    }
+  };
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -923,14 +1062,14 @@ export default function SettingsPage() {
             label="Email Alerts for EMI Dues"
             sub="Receive reminder emails directly in your inbox"
             checked={emailAlertsEnabled}
-            onChange={setEmailAlertsEnabled}
+            onChange={handleToggleEmailAlerts}
             noBorder
           />
           <ToggleRow
             label="Local Push Notifications"
             sub="Native device alerts for upcoming bills & EMIs"
             checked={pushNotificationsEnabled}
-            onChange={setPushNotificationsEnabled}
+            onChange={handleTogglePushNotifications}
           />
 
           {/* Daily Expense Logging Reminder */}
@@ -979,21 +1118,76 @@ export default function SettingsPage() {
                 label="EMI Server Sync"
                 sub="Store your EMI schedule on our server to send email notifications"
                 checked={notifEMISync}
-                onChange={setNotifEMISync}
+                onChange={handleToggleEMISync}
               />
               {FEATURE_MONTHLY && (
                 <ToggleRow
                   label="Monthly Email Statement"
-                  sub="Sync high-level monthly totals (no itemized transactions)"
+                  sub="Sync high-level monthly totals & receive official statement"
                   checked={notifMonthlyStatement}
                   onChange={(val) => {
                     if (val && !notifMonthlyStatement) setShowMonthlyConfirm(true);
-                    else setNotifMonthlyStatement(val);
+                    else handleToggleMonthlyStatement(val);
                   }}
                 />
               )}
             </>
           )}
+
+          {/* Test & Hardware Permissions Trigger */}
+          <div className="p-3.5 border-t border-[var(--border-color)] bg-white/[0.02] flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-[#6366F1]" />
+                  Notification & Hardware Tools
+                </p>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Verify device alerts and manage hardware permissions
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPermissionModal(true)}
+                className="px-3 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1]/20 text-[#6366F1] font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <Camera size={13} />
+                <span>Device Permissions</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleTestNotification}
+                disabled={testingNotif}
+                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Bell size={13} className="text-[#6366F1]" />
+                <span>{testingNotif ? "Sending..." : "Test App Alert"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTestEmail("emi")}
+                disabled={testingEmail || !user?.email}
+                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <CreditCard size={13} className="text-emerald-400" />
+                <span>{testingEmail ? "Sending..." : "Test EMI Mail"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTestEmail("summary")}
+                disabled={testingEmail || !user?.email}
+                className="py-2 px-2.5 rounded-xl bg-[var(--bg-primary)] hover:bg-[var(--border-color)]/50 border border-[var(--border-color)] text-[11px] font-semibold text-[var(--text-primary)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 col-span-2 sm:col-span-1 cursor-pointer"
+              >
+                <Calendar size={13} className="text-amber-400" />
+                <span>{testingEmail ? "Sending..." : "Test Summary Mail"}</span>
+              </button>
+            </div>
+          </div>
         </SettingsSection>
 
         {/* ── 5. Advanced Modules (Sub-Pages) ─────────────────────────────────── */}
@@ -1165,7 +1359,7 @@ export default function SettingsPage() {
             </DialogClose>
             <button
               onClick={() => {
-                setNotifMonthlyStatement(true);
+                handleToggleMonthlyStatement(true);
                 setShowMonthlyConfirm(false);
               }}
               className="px-4 py-2 rounded-xl text-sm font-semibold bg-[var(--accent,#6366F1)] text-white hover:opacity-90 transition-opacity"
@@ -1175,6 +1369,12 @@ export default function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Device Hardware & Permissions Modal ── */}
+      <DevicePermissionModal
+        forceOpen={showPermissionModal}
+        onClose={() => setShowPermissionModal(false)}
+      />
     </div>
   );
 }

@@ -94,6 +94,12 @@ interface SettingsState {
   budgetAlert100: boolean;
   /** Toggle for the daily spending-summary reminder */
   notifDailyReminder: boolean;
+  /** Hardware & Permissions */
+  hasPromptedPermissions: boolean;
+  cameraPermission: 'prompt' | 'granted' | 'denied';
+  notificationPermission: 'prompt' | 'granted' | 'denied';
+  lastDailyReminderDate: string;
+  lastMonthlyStatementSentMonth: string;
 
   // ── Auto-Categorisation ────────────────────────────────────────────────────
   /** Keyword → category mapping rules applied when auto-tagging new expenses */
@@ -130,6 +136,11 @@ interface SettingsState {
   setBudgetAlert80: (val: boolean) => void;
   setBudgetAlert100: (val: boolean) => void;
   setNotifDailyReminder: (val: boolean) => void;
+  setHasPromptedPermissions: (val: boolean) => void;
+  setCameraPermission: (val: 'prompt' | 'granted' | 'denied') => void;
+  setNotificationPermission: (val: 'prompt' | 'granted' | 'denied') => void;
+  setLastDailyReminderDate: (val: string) => void;
+  setLastMonthlyStatementSentMonth: (val: string) => void;
   setAutoCategorizeRules: (val: AutoCategorizeRule[]) => void;
   setAppLockEnabled: (val: boolean) => void;
   setAppLockPin: (val: string) => void;
@@ -223,6 +234,11 @@ const DEFAULTS = {
   budgetAlert80: true,
   budgetAlert100: true,
   notifDailyReminder: false,
+  hasPromptedPermissions: false,
+  cameraPermission: 'prompt' as 'prompt' | 'granted' | 'denied',
+  notificationPermission: 'prompt' as 'prompt' | 'granted' | 'denied',
+  lastDailyReminderDate: '',
+  lastMonthlyStatementSentMonth: '',
 
   // auto-categorisation
   autoCategorizeRules: [] as AutoCategorizeRule[],
@@ -289,6 +305,11 @@ export const useSettingsStore = create<SettingsState>()(
       setBudgetAlert80: (val) => set({ budgetAlert80: val }),
       setBudgetAlert100: (val) => set({ budgetAlert100: val }),
       setNotifDailyReminder: (val) => set({ notifDailyReminder: val }),
+      setHasPromptedPermissions: (val) => set({ hasPromptedPermissions: val }),
+      setCameraPermission: (val) => set({ cameraPermission: val }),
+      setNotificationPermission: (val) => set({ notificationPermission: val }),
+      setLastDailyReminderDate: (val) => set({ lastDailyReminderDate: val }),
+      setLastMonthlyStatementSentMonth: (val) => set({ lastMonthlyStatementSentMonth: val }),
       setAutoCategorizeRules: (val) => set({ autoCategorizeRules: val }),
       setAppLockEnabled: (val) => set({ appLockEnabled: val }),
       setAppLockPin: (val) => set({ appLockPin: val }),
@@ -374,6 +395,11 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         budgetAlert80: s.budgetAlert80 ?? DEFAULTS.budgetAlert80,
         budgetAlert100: s.budgetAlert100 ?? DEFAULTS.budgetAlert100,
         notifDailyReminder: s.notifDailyReminder ?? DEFAULTS.notifDailyReminder,
+        hasPromptedPermissions: s.hasPromptedPermissions ?? DEFAULTS.hasPromptedPermissions,
+        cameraPermission: (s.cameraPermission as any) ?? DEFAULTS.cameraPermission,
+        notificationPermission: (s.notificationPermission as any) ?? DEFAULTS.notificationPermission,
+        lastDailyReminderDate: s.lastDailyReminderDate ?? DEFAULTS.lastDailyReminderDate,
+        lastMonthlyStatementSentMonth: s.lastMonthlyStatementSentMonth ?? DEFAULTS.lastMonthlyStatementSentMonth,
 
         // auto-categorisation
         autoCategorizeRules: s.autoCategorizeRules ?? DEFAULTS.autoCategorizeRules,
@@ -434,6 +460,11 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         budgetAlert80: state.budgetAlert80,
         budgetAlert100: state.budgetAlert100,
         notifDailyReminder: state.notifDailyReminder,
+        hasPromptedPermissions: state.hasPromptedPermissions,
+        cameraPermission: state.cameraPermission,
+        notificationPermission: state.notificationPermission,
+        lastDailyReminderDate: state.lastDailyReminderDate,
+        lastMonthlyStatementSentMonth: state.lastMonthlyStatementSentMonth,
 
         // auto-categorisation
         autoCategorizeRules: state.autoCategorizeRules,

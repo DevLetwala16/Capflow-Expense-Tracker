@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, UserPlus, Link as LinkIcon, Users } from "lucide-react";
+import { X, UserPlus, Link as LinkIcon, Users, User } from "lucide-react";
 import { SplitMember } from "@/types/splitter";
 
 const MEMBER_COLORS = [
@@ -175,8 +175,18 @@ export function AddMemberModal({
                     <Users size={13} className="text-[#6366F1]" />
                     <span>Family Headcount (Persons)</span>
                   </label>
-                  <span className="text-[10px] font-bold text-[#6366F1] px-2 py-0.5 rounded-full bg-[#6366F1]/10">
-                    {familyCount === 1 ? "1 Person (Self)" : `👨‍👩‍👧 ${familyCount} Persons`}
+                  <span className="text-[10px] font-bold text-[#6366F1] px-2 py-0.5 rounded-full bg-[#6366F1]/10 flex items-center gap-1">
+                    {familyCount === 1 ? (
+                      <>
+                        <User size={11} />
+                        <span>1 Person (Self)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Users size={11} />
+                        <span>{familyCount} Persons</span>
+                      </>
+                    )}
                   </span>
                 </div>
                 <p className="text-[11px] text-[var(--text-secondary)]">

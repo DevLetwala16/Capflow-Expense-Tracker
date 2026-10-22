@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
@@ -10,11 +11,33 @@ export const dynamic = "force-dynamic";
 // Callable by Vercel Cron (00:05 UTC on the 1st of each month) or manual GET.
 // Sends each eligible user a summary of all their EMIs for the current month.
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // ── 1. Verify CRON_SECRET ─────────────────────────────────────────────────
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
+  return handleMonthlySummary(req);
+}
 
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  return handleMonthlySummary(req);
+}
+
+async function handleMonthlySummary(req: NextRequest): Promise<NextResponse> {
+  // ── 1. Verify Authorization (Bearer token, query secret, or authenticated cookie) ──
+  const authHeader = req.headers.get("authorization");
+  const urlSecret = req.nextUrl.searchParams.get("secret");
+  const cronSecret = process.env.CRON_SECRET;
+  const token = req.cookies.get("capflow_token")?.value;
+
+  const isCronAuthorized =
+    Boolean(cronSecret) &&
+    (authHeader === `Bearer ${cronSecret}` || urlSecret === cronSecret);
+
+  let sessionEmail: string | null = null;
+  if (!isCronAuthorized && token && process.env.JWT_SECRET) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET) as { email: string };
+      sessionEmail = decoded.email?.toLowerCase();
+    } catch {}
+  }
+
+  if (!isCronAuthorized && !sessionEmail) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -29,11 +52,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       year: "numeric",
     }); // e.g. "October 2026"
 
-    // Fetch users who have opted into EMI reminders and have emiEmailSync on
-    const users = await User.find({
+    // Fetch users who have opted into EMI reminders and have emiEmailSync on (or session user)
+    const userFilter: Record<string, any> = {
       "preferences.emailNotifications.emiReminders": true,
       "preferences.emailNotifications.emiEmailSync": true,
-    }).lean();
+    };
+    if (sessionEmail) {
+      userFilter.email = sessionEmail;
+    }
+    const users = await User.find(userFilter).lean();
 
     let sent = 0;
 

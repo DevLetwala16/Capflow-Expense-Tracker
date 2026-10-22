@@ -407,8 +407,9 @@ export function CreateSessionModal({
                                 {m.name}
                               </p>
                               {(m.familyCount ?? 1) > 1 && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1] flex-shrink-0">
-                                  👨‍👩‍👧 {m.familyCount} Persons
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1] flex-shrink-0 inline-flex items-center gap-1">
+                                  <Users size={10} />
+                                  <span>{m.familyCount} Persons</span>
                                 </span>
                               )}
                               {m.isDependent && (
@@ -508,8 +509,18 @@ export function CreateSessionModal({
                           <Users size={12} className="text-[#6366F1]" />
                           <span>Family Headcount</span>
                         </label>
-                        <p className="text-[10px] text-[var(--text-secondary)]">
-                          {newMemberFamilyCount === 1 ? "1 Person (Self)" : `👨‍👩‍👧 Family of ${newMemberFamilyCount} persons`}
+                        <p className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1 mt-0.5">
+                          {newMemberFamilyCount === 1 ? (
+                            <>
+                              <User size={10} />
+                              <span>1 Person (Self)</span>
+                            </>
+                          ) : (
+                            <>
+                              <Users size={10} />
+                              <span>Family of {newMemberFamilyCount} persons</span>
+                            </>
+                          )}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">

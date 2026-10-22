@@ -14,6 +14,7 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { DesktopSidebar } from "@/components/shared/DesktopSidebar";
 import { PWAInstallBanner } from "@/components/shared/PWAInstallBanner";
 import { useRecurringEngine } from "@/hooks/useRecurringEngine";
+import { useNotificationEngine } from "@/hooks/useNotificationEngine";
 
 // These components read browser-only APIs (localStorage / window) during render.
 // Rendering them with ssr:false ensures the server HTML never includes them,
@@ -28,6 +29,14 @@ const WalkthroughProvider = dynamic(
 );
 const AppLockOverlay = dynamic(
   () => import("@/components/shared/AppLockOverlay").then((m) => ({ default: m.AppLockOverlay })),
+  { ssr: false }
+);
+const InAppNotificationBanner = dynamic(
+  () => import("@/components/shared/InAppNotificationBanner").then((m) => ({ default: m.InAppNotificationBanner })),
+  { ssr: false }
+);
+const DevicePermissionModal = dynamic(
+  () => import("@/components/shared/DevicePermissionModal").then((m) => ({ default: m.DevicePermissionModal })),
   { ssr: false }
 );
 
@@ -57,6 +66,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Run the recurring-transaction engine once per calendar day on app load.
   // This auto-generates child transactions for any recurring parent that is due.
   useRecurringEngine(user?.id);
+
+  // Run the notification & reminder engine (daily reminders, EMI due alerts, budget warnings, auto emails)
+  useNotificationEngine();
 
   // Track the last user we bootstrapped stores for, so we don't re-run on
   // every render — only when the user actually changes.
@@ -157,6 +169,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="app-shell flex flex-col md:flex-row min-h-screen bg-[var(--bg-primary)]">
       {/* ── App Lock & Security Overlay ── */}
       <AppLockOverlay />
+
+      {/* ── Floating In-App Notifications Banner ── */}
+      <InAppNotificationBanner />
+
+      {/* ── First-time Device & Hardware Permissions Modal ── */}
+      <DevicePermissionModal />
 
       {/* ── Walkthrough overlay (renderless — manages its own portal/modal) ── */}
       <WalkthroughProvider />

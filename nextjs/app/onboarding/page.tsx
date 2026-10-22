@@ -18,6 +18,7 @@ import {
   CreditCard,
   ArrowRight,
 } from "lucide-react";
+import { DevicePermissionModal } from "@/components/shared/DevicePermissionModal";
 
 // ─── Step 1 Preview: Real Animated Balance Card ──────────────────────────────
 function BalanceCardPreview() {
@@ -609,6 +610,9 @@ export default function OnboardingPage() {
           </button>
         </div>
       </footer>
+
+      {/* ── First-time Device & Hardware Permissions Modal ── */}
+      <DevicePermissionModal />
     </div>
   );
 }

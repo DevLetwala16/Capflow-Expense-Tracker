@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
 import User from "@/lib/mongodb/userModel";
 import { sendMonthlyStatementNotification } from "@/lib/email/mailer";
@@ -13,16 +14,38 @@ export const dynamic = "force-dynamic";
 //   • Only emails users where preferences.emailNotifications.monthlyStatement === true
 //   • Email contains NO financial data — only a privacy-safe nudge to open the app
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  return handleMonthlyStatement(req);
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  return handleMonthlyStatement(req);
+}
+
+async function handleMonthlyStatement(req: NextRequest): Promise<NextResponse> {
   // ── 1. Check feature flag ─────────────────────────────────────────────────
   if (process.env.FEATURE_MONTHLY_STATEMENT !== "true") {
     return NextResponse.json({ skipped: "feature_flag_disabled" }, { status: 200 });
   }
 
-  // ── 2. Verify CRON_SECRET ─────────────────────────────────────────────────
+  // ── 2. Verify Authorization (Bearer token, query secret, or authenticated cookie) ──
   const authHeader = req.headers.get("authorization");
+  const urlSecret = req.nextUrl.searchParams.get("secret");
   const cronSecret = process.env.CRON_SECRET;
+  const token = req.cookies.get("capflow_token")?.value;
 
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  const isCronAuthorized =
+    Boolean(cronSecret) &&
+    (authHeader === `Bearer ${cronSecret}` || urlSecret === cronSecret);
+
+  let sessionEmail: string | null = null;
+  if (!isCronAuthorized && token && process.env.JWT_SECRET) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET) as { email: string };
+      sessionEmail = decoded.email?.toLowerCase();
+    } catch {}
+  }
+
+  if (!isCronAuthorized && !sessionEmail) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -30,9 +53,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // ── 3. Connect to MongoDB & fetch eligible users ───────────────────────
     await connectMongoDB();
 
-    const users = await User.find({
+    const userFilter: Record<string, any> = {
       "preferences.emailNotifications.monthlyStatement": true,
-    }).lean();
+    };
+    if (sessionEmail) {
+      userFilter.email = sessionEmail;
+    }
+
+    const users = await User.find(userFilter).lean();
 
     // Build the month label for the current (just-ended) month
     const now = new Date();

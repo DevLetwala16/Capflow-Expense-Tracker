@@ -1,110 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { connectMongoDB } from "@/lib/mongodb/connection";
+import User from "@/lib/mongodb/userModel";
 import EmiReminder from "@/lib/mongodb/emiReminderModel";
 
 export const dynamic = "force-dynamic";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface SyncRequestBody {
-  emiId: number;
-  name: string;
-  monthlyCost: number;
-  dueDay: number;
-  reminderLeadDays: number;
-  action: "upsert" | "delete";
-}
-
-interface JWTPayload {
+interface JwtPayload {
   userId: string;
-  email?: string;
-  [key: string]: unknown;
+  email: string;
 }
 
-// ─── JWT helper ───────────────────────────────────────────────────────────────
-function extractUserId(req: NextRequest): string | null {
-  const cookieToken =
-    req.cookies.get("capflow_token")?.value || req.cookies.get("token")?.value;
-  if (!cookieToken) return null;
-
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return null;
-
+function getAuthUser(req: NextRequest): JwtPayload | null {
+  const token = req.cookies.get("capflow_token")?.value;
+  if (!token) return null;
   try {
-    const payload = jwt.verify(cookieToken, secret) as JWTPayload;
-    return payload.userId ?? null;
+    return jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
   } catch {
     return null;
   }
 }
 
-// ─── POST /api/emis/sync ──────────────────────────────────────────────────────
-// Called by the client when the user enables/disables emailSyncEnabled on an EMI.
-// Stores only the scheduling metadata needed for cron-driven reminder emails.
-// NO transaction data is stored.
+// ─── POST /api/emis/sync ─────────────────────────────────────────────────────
+// Syncs client-side Dexie EMIs to MongoDB EmiReminder collection
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // ── 1. Authenticate via JWT cookie ────────────────────────────────────────
-  const userId = extractUserId(req);
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // ── 2. Parse and validate request body ───────────────────────────────────
-  let body: SyncRequestBody;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
+    const auth = getAuthUser(req);
+    const body = await req.json().catch(() => ({}));
+    const targetEmail = (auth?.email || body.email)?.toLowerCase();
 
-  const { emiId, name, monthlyCost, dueDay, reminderLeadDays, action } = body;
-
-  if (typeof emiId !== "number") {
-    return NextResponse.json({ error: "emiId must be a number" }, { status: 400 });
-  }
-  if (!["upsert", "delete"].includes(action)) {
-    return NextResponse.json(
-      { error: "action must be 'upsert' or 'delete'" },
-      { status: 400 },
-    );
-  }
-  if (action === "upsert") {
-    if (typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (!targetEmail) {
+      return NextResponse.json({ error: "Unauthorized: Missing user email" }, { status: 401 });
     }
-    if (typeof monthlyCost !== "number" || monthlyCost < 0) {
-      return NextResponse.json({ error: "monthlyCost must be a non-negative number" }, { status: 400 });
+
+    await connectMongoDB();
+    const user = await User.findOne({ email: targetEmail });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    if (typeof dueDay !== "number" || dueDay < 1 || dueDay > 31) {
-      return NextResponse.json({ error: "dueDay must be between 1 and 31" }, { status: 400 });
-    }
-  }
 
-  // ── 3. Connect to MongoDB ─────────────────────────────────────────────────
-  await connectMongoDB();
+    const userIdStr = user._id.toString();
+    const incomingEmis: Array<{
+      id: number;
+      name: string;
+      monthlyCost: number;
+      dueDay: number;
+      reminderLeadDays?: number;
+    }> = Array.isArray(body.emis) ? body.emis : [];
 
-  // ── 4. Upsert or delete the EMI reminder record ───────────────────────────
-  if (action === "delete") {
-    await EmiReminder.deleteOne({ userId, clientEmiId: emiId });
-    return NextResponse.json({ ok: true });
-  }
+    // Wipe previous server records for this user to keep exact parity with Dexie
+    await EmiReminder.deleteMany({ userId: userIdStr });
 
-  // action === "upsert"
-  await EmiReminder.findOneAndUpdate(
-    { userId, clientEmiId: emiId },
-    {
-      $set: {
-        userId,
-        clientEmiId: emiId,
-        name: name.trim(),
-        monthlyCost,
-        dueDay,
-        reminderLeadDays: typeof reminderLeadDays === "number" ? reminderLeadDays : 3,
+    // Insert active client EMIs
+    if (incomingEmis.length > 0) {
+      const docs = incomingEmis.map((e) => ({
+        userId: userIdStr,
+        clientEmiId: e.id,
+        name: e.name,
+        monthlyCost: Number(e.monthlyCost) || 0,
+        dueDay: Math.max(1, Math.min(31, Number(e.dueDay) || 1)),
+        reminderLeadDays: Number(e.reminderLeadDays) || 3,
         updatedAt: new Date(),
-      },
-    },
-    { upsert: true, new: true },
-  );
+      }));
 
-  return NextResponse.json({ ok: true });
+      await EmiReminder.insertMany(docs);
+    }
+
+    // Auto-enable EMI sync preferences in User document if not enabled
+    if (body.enableSync !== false) {
+      user.preferences.emailNotifications.emiEmailSync = true;
+      user.preferences.emailNotifications.emiReminders = true;
+      await user.save();
+    }
+
+    return NextResponse.json({
+      success: true,
+      syncedCount: incomingEmis.length,
+      userId: userIdStr,
+      preferences: user.preferences?.emailNotifications,
+    });
+  } catch (error: any) {
+    console.error("[api/emis/sync POST]", error);
+    return NextResponse.json({ error: error?.message || "Failed to sync EMIs" }, { status: 500 });
+  }
 }
