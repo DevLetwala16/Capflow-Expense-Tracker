@@ -44,6 +44,7 @@ import {
   getExpenseMemberStatus,
   getItemizedExpensesForPair,
   getSettlementRoadmapHistory,
+  calculateMutualAdjustments,
 } from "@/lib/splitter/debtEngine";
 import {
   generateSplitterReportPDF,
@@ -71,7 +72,7 @@ import {
   removeSyncedExpenseTransaction,
 } from "@/lib/splitter/splitterTransactionSync";
 
-type ActiveTab = "expenses" | "roadmap" | "export";
+type ActiveTab = "expenses" | "status" | "roadmap" | "export";
 
 export default function SplitterSessionDashboard() {
   const params = useParams();
@@ -179,23 +180,80 @@ export default function SplitterSessionDashboard() {
     return simplifyDebts(memberPositions);
   }, [memberPositions]);
 
-  const settlementHistory = useMemo(() => {
+  const appMemberDebts = useMemo(() => {
     if (!activeSession) return [];
-    return getSettlementRoadmapHistory(activeSession);
+    return simplifiedDebts.filter((st) => {
+      const fromMember = activeSession.members.find((m) => m.id === st.fromMemberId);
+      return Boolean(fromMember?.userId);
+    });
+  }, [simplifiedDebts, activeSession]);
+
+  const manualMemberDebts = useMemo(() => {
+    if (!activeSession) return [];
+    return simplifiedDebts.filter((st) => {
+      const fromMember = activeSession.members.find((m) => m.id === st.fromMemberId);
+      return !fromMember?.userId;
+    });
+  }, [simplifiedDebts, activeSession]);
+
+  const getSettlementUpToDate = (st: SettlementTransaction): string => {
+    if (!activeSession)
+      return new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    let latestDate: string | null = null;
+    for (const exp of activeSession.expenses) {
+      const involvesFrom =
+        exp.paidBy?.some((p) => p.memberId === st.fromMemberId) ||
+        exp.splits?.some((s) => s.memberId === st.fromMemberId);
+      const involvesTo =
+        exp.paidBy?.some((p) => p.memberId === st.toMemberId) ||
+        exp.splits?.some((s) => s.memberId === st.toMemberId);
+      if (involvesFrom || involvesTo) {
+        if (!latestDate || new Date(exp.date).getTime() > new Date(latestDate).getTime()) {
+          latestDate = exp.date;
+        }
+      }
+    }
+    const dateObj = latestDate
+      ? new Date(latestDate)
+      : activeSession.createdAt
+      ? new Date(activeSession.createdAt)
+      : new Date();
+    return dateObj.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const settlementHistoryList = useMemo(() => {
+    if (!activeSession) return [];
+    const memberNameMap = new Map(activeSession.members.map((m) => [m.id, m.name]));
+
+    const directList = (activeSession.settlements || []).map((st) => ({
+      id: st.id,
+      settlementId: st.id,
+      fromName: memberNameMap.get(st.fromMemberId) || "Member",
+      toName: memberNameMap.get(st.toMemberId) || "Member",
+      amount: st.amount,
+      date: st.date || st.createdAt || new Date().toISOString(),
+      notes: st.notes,
+      canUndo: true,
+    }));
+
+    const autoList = calculateMutualAdjustments(activeSession).map((adj) => ({
+      id: adj.id,
+      settlementId: "",
+      fromName: adj.memberA.name,
+      toName: `${adj.memberB.name} (Auto-Adjusted)`,
+      amount: adj.adjustedAmount,
+      date: adj.latestDate,
+      notes: "Mutual shared expenses offset",
+      canUndo: false,
+    }));
+
+    const all = [...directList, ...autoList];
+    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [activeSession]);
-
-  const filteredSettlementHistory = useMemo(() => {
-    if (historyFilter === "all") return settlementHistory;
-    return settlementHistory.filter((item) => item.type === historyFilter);
-  }, [settlementHistory, historyFilter]);
-
-  const markedPaidCount = useMemo(() => {
-    return settlementHistory.filter((item) => item.type === "marked_paid").length;
-  }, [settlementHistory]);
-
-  const autoAdjustedCount = useMemo(() => {
-    return settlementHistory.filter((item) => item.type === "auto_adjustment").length;
-  }, [settlementHistory]);
 
   const totalGroupSpend = useMemo(() => {
     if (!activeSession) return 0;
@@ -610,9 +668,9 @@ export default function SplitterSessionDashboard() {
               )}
             </Link>
 
-            <Link
-              href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
-              className="min-w-0 group"
+            <button
+              onClick={() => setActiveTab("status")}
+              className="min-w-0 group text-left"
             >
               <div className="flex items-center gap-1.5 flex-wrap">
                 <h3 className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[#6366F1] transition-colors whitespace-nowrap">
@@ -625,7 +683,7 @@ export default function SplitterSessionDashboard() {
               <p className="text-[11px] text-[var(--text-secondary)] line-clamp-1 sm:line-clamp-none">
                 View balances, shares & dues
               </p>
-            </Link>
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -638,19 +696,23 @@ export default function SplitterSessionDashboard() {
               <span className="hidden sm:inline">Add</span>
             </button>
 
-            <Link
-              href={`/budgets/splitter/${encodeURIComponent(activeSession.sessionId)}/members`}
-              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-[#6366F1]/10 text-[#6366F1] hover:bg-[#6366F1] hover:text-white transition-all shadow-sm"
-              title="Open full members directory"
+            <button
+              onClick={() => setActiveTab("status")}
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
+                activeTab === "status"
+                  ? "bg-[#6366F1] text-white"
+                  : "bg-[#6366F1]/10 text-[#6366F1] hover:bg-[#6366F1] hover:text-white"
+              }`}
+              title="View member payment status"
             >
-              <span>Members</span>
+              <span>Status</span>
               <ChevronRight size={13} />
-            </Link>
+            </button>
           </div>
         </div>
 
-        {/* ── 3-Button Responsive Control Bar (Zero Horizontal or Vertical Cut on Mobile) ── */}
-        <div className="grid grid-cols-3 gap-1.5 p-1.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm w-full">
+        {/* ── 4-Button Responsive Control Bar ── */}
+        <div className="grid grid-cols-4 gap-1 sm:gap-1.5 p-1 sm:p-1.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm w-full">
           {[
             {
               id: "expenses",
@@ -658,6 +720,13 @@ export default function SplitterSessionDashboard() {
               shortLabel: "Expenses",
               icon: Receipt,
               count: activeSession.expenses.length,
+            },
+            {
+              id: "status",
+              label: "Member Status",
+              shortLabel: "Status",
+              icon: Users2,
+              count: activeSession.members.length,
             },
             {
               id: "roadmap",
@@ -669,7 +738,7 @@ export default function SplitterSessionDashboard() {
             {
               id: "export",
               label: "Export & Activity",
-              shortLabel: "Export & Audit",
+              shortLabel: "Export",
               icon: FileText,
               count: activeSession.auditLogs.length,
             },
@@ -908,105 +977,138 @@ export default function SplitterSessionDashboard() {
                         </div>
                       </div>
 
-                      {/* Expanded Breakdown: All included people's amount and paid status */}
+                      {/* Expanded Card: Complete Info (Title, Category, Date, Time, Payer, All Member Dues) */}
                       <AnimatePresence>
                         {isExpanded && (
                           <motion.div
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
                             exit={{ opacity: 0, height: 0 }}
-                            className="pt-3 border-t border-[var(--border-color)] space-y-2 overflow-hidden"
+                            className="pt-3.5 border-t border-[var(--border-color)] space-y-3 overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--text-secondary)]">
-                              <span>Participant Payment Breakdown</span>
-                              <span className="text-[10px]">
-                                {settledSplits} of {totalSplits} settled
-                              </span>
+                            {/* Expense Details Card */}
+                            <div className="p-3 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)]/70 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-color)]/50 pb-2">
+                                <div className="min-w-0">
+                                  <span className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider block">
+                                    Itemized Expense Details
+                                  </span>
+                                  <h4 className="text-sm font-extrabold text-[var(--text-primary)] truncate mt-0.5">
+                                    {exp.title}
+                                  </h4>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
+                                    {exp.category}
+                                  </span>
+                                  <span className="text-sm font-extrabold text-[var(--text-primary)] block mt-1">
+                                    Total: {formatSplitCurrency(exp.amount, exp.currency)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                                <div>
+                                  <span className="text-[10px] text-[var(--text-secondary)] block">Date & Time</span>
+                                  <span className="font-semibold text-[var(--text-primary)]">
+                                    {new Date(exp.date).toLocaleDateString("en-IN", {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-[var(--text-secondary)] block">Payer</span>
+                                  <span className="font-semibold text-[var(--text-primary)]">
+                                    {payerSummary}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
 
+                            {/* All Member Dues Breakdown */}
                             <div className="space-y-1.5">
-                              {exp.splits.map((split) => {
-                                const member = activeSession.members.find((m) => m.id === split.memberId);
-                                if (!member) return null;
-                                const statusInfo = getExpenseMemberStatus(
-                                  exp,
-                                  member,
-                                  activeSession
-                                );
+                              <div className="flex items-center justify-between text-[11px] font-bold text-[var(--text-secondary)] px-1">
+                                <span>Member Dues Breakdown</span>
+                                <span>{exp.splits.length} Members</span>
+                              </div>
 
-                                return (
-                                  <div
-                                    key={split.memberId}
-                                    className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between gap-2.5"
-                                  >
-                                    <div className="flex items-center gap-2.5 min-w-0">
-                                      <div
-                                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 shadow-sm"
-                                        style={{ backgroundColor: member.color }}
-                                      >
-                                        {member.name.charAt(0).toUpperCase()}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                          <p className="text-xs font-bold text-[var(--text-primary)] truncate">
-                                            {member.name}
-                                          </p>
-                                          {member.isDependent && (
-                                            <span className="text-[9px] font-semibold px-1 py-0.2 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
-                                              Dependent
-                                            </span>
-                                          )}
+                              <div className="space-y-1.5">
+                                {exp.splits.map((split) => {
+                                  const member = activeSession.members.find((m) => m.id === split.memberId);
+                                  if (!member) return null;
+
+                                  // Calculate member's upfront paid amount for this expense
+                                  const paidUpfront =
+                                    exp.paidBy?.reduce(
+                                      (sum, p) => (p.memberId === split.memberId ? sum + p.amount : sum),
+                                      0
+                                    ) || 0;
+
+                                  // Member due calculation
+                                  const dueAmount = Math.max(0, split.amount - paidUpfront);
+
+                                  return (
+                                    <div
+                                      key={split.memberId}
+                                      className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between gap-2.5"
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div
+                                          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 shadow-sm"
+                                          style={{ backgroundColor: member.color }}
+                                        >
+                                          {member.name.charAt(0).toUpperCase()}
                                         </div>
-                                        <p className="text-[10px] text-[var(--text-secondary)]">
-                                          {member.handle}
-                                        </p>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5">
+                                            <p className="text-xs font-bold text-[var(--text-primary)] truncate">
+                                              {member.name}
+                                            </p>
+                                            {member.isDependent && (
+                                              <span className="text-[9px] font-semibold px-1 py-0.2 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
+                                                Dependent
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-[10px] text-[var(--text-secondary)]">
+                                            Share: {formatSplitCurrency(split.amount, exp.currency)}
+                                            {paidUpfront > 0 &&
+                                              ` · Paid upfront: ${formatSplitCurrency(paidUpfront, exp.currency)}`}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {/* Member Due Amount (Instead of pending/paid status) */}
+                                      <div className="text-right flex-shrink-0">
+                                        {dueAmount > 0 ? (
+                                          <div>
+                                            <span className="text-xs font-extrabold text-[#EF4444] block">
+                                              Due: {formatSplitCurrency(dueAmount, exp.currency)}
+                                            </span>
+                                            <span className="text-[9px] font-semibold text-[var(--text-secondary)]">
+                                              Unpaid share
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div>
+                                            <span className="text-xs font-extrabold text-[#10B981] block">
+                                              Due: {formatSplitCurrency(0, exp.currency)}
+                                            </span>
+                                            <span className="text-[9px] font-semibold text-[#10B981]">
+                                              Paid Upfront
+                                            </span>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                      <div className="text-right">
-                                        <span className="text-xs font-extrabold text-[var(--text-primary)] block">
-                                          {formatSplitCurrency(split.amount, exp.currency)}
-                                        </span>
-                                        <span
-                                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block ${statusInfo.badgeClass}`}
-                                        >
-                                          {statusInfo.label}
-                                        </span>
-                                      </div>
-
-                                      {statusInfo.canMarkSettled && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleSettleExpenseShare(exp.id, split.memberId);
-                                          }}
-                                          className="px-2.5 py-1 rounded-lg bg-[#10B981] text-white text-[11px] font-bold hover:bg-[#059669] active:scale-95 flex items-center gap-1 shadow-sm transition-all"
-                                          title="Mark this participant's share as settled"
-                                        >
-                                          <Check size={11} strokeWidth={2.5} />
-                                          <span>Mark Settled</span>
-                                        </button>
-                                      )}
-
-                                      {statusInfo.canUndo && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleSettleExpenseShare(exp.id, split.memberId);
-                                          }}
-                                          className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
-                                          title="Undo settlement for this participant"
-                                        >
-                                          Undo
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
                           </motion.div>
                         )}
@@ -1019,16 +1121,125 @@ export default function SplitterSessionDashboard() {
           </div>
         )}
 
-        {/* ── Tab 2: Settlement Roadmap (Min-Cash-Flow) ── */}
-        {activeTab === "roadmap" && (
+        {/* ── Tab 2: All Members Settlement Status (Read-Only) ── */}
+        {activeTab === "status" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-end">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  All Members Settlement Status
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Overview of all group members showing who has fully cleared their dues or has pending payments.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold self-start sm:self-auto">
+                <span className="px-2.5 py-1 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                  {memberPositions.filter((p) => p.netBalance >= -0.01).length} Settled
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30">
+                  {memberPositions.filter((p) => p.netBalance < -0.01).length} Pending
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {memberPositions.map((pos) => {
+                const isSettled = pos.netBalance >= -0.01;
+                const member = activeSession.members.find((m) => m.id === pos.memberId);
+
+                return (
+                  <div
+                    key={pos.memberId}
+                    className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between gap-3 shadow-sm hover:border-[var(--border-color)]/90 transition-all"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm"
+                        style={{ backgroundColor: pos.color || "#6366F1" }}
+                      >
+                        {pos.memberName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-[var(--text-primary)] truncate">
+                            {pos.memberName}
+                          </p>
+                          {pos.isDependent && (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--bg-primary)] text-[var(--text-secondary)] border border-[var(--border-color)]">
+                              Dependent (Covered by {pos.primaryPayerName})
+                            </span>
+                          )}
+                          {member?.userId ? (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#6366F1]/10 text-[#6366F1]">
+                              CapFlow User
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--bg-primary)] text-[var(--text-secondary)]">
+                              Manual Member
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                          {pos.handle}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status & Due (No action button, pure status) */}
+                    <div className="text-right flex-shrink-0">
+                      <span
+                        className={`text-xs font-bold px-2.5 py-1 rounded-full inline-block ${
+                          isSettled
+                            ? "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30"
+                            : "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
+                        }`}
+                      >
+                        {isSettled ? "Settled ✓" : "Pending"}
+                      </span>
+                      <p className="text-[11px] font-semibold mt-1">
+                        {isSettled ? (
+                          pos.netBalance > 0.01 ? (
+                            <span className="text-[#10B981]">
+                              Gets back {formatSplitCurrency(pos.netBalance, activeSession.currency)}
+                            </span>
+                          ) : (
+                            <span className="text-[#10B981]">All dues cleared</span>
+                          )
+                        ) : (
+                          <span className="text-[#EF4444]">
+                            Due: {formatSplitCurrency(-pos.netBalance, activeSession.currency)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Tab 3: Settlement Roadmap (Min-Cash-Flow) ── */}
+        {activeTab === "roadmap" && (
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  Settlement Roadmap
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Optimized payments to settle all group debts with minimum transactions.
+                </p>
+              </div>
+
               <button
                 onClick={() => {
                   setSuggestedSettlement(null);
                   setShowSettlementModal(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all shadow-sm shadow-[#10B981]/20"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] transition-all shadow-sm shadow-[#10B981]/20 flex-shrink-0"
               >
                 <Plus size={14} />
                 <span>Record Payment</span>
@@ -1048,436 +1259,258 @@ export default function SplitterSessionDashboard() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {simplifiedDebts.map((st, idx) => {
-                  const isExpanded = expandedRoadmapIndices.has(idx);
-                  const itemizedExpenses = getItemizedExpensesForPair(
-                    activeSession,
-                    st.fromMemberId,
-                    st.toMemberId
-                  );
-                  const pendingCount = itemizedExpenses.filter((i) => !i.settled).length;
-
-                  return (
-                    <motion.div
-                      key={idx}
-                      layout
-                      className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/40 transition-all space-y-3 cursor-pointer select-none"
-                      onClick={() => toggleRoadmapExpansion(idx)}
-                    >
-                      <div className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
-                        <div className="flex items-start sm:items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
-                            <HandCoins size={18} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
-                              <span className="font-bold text-[#EF4444] break-words">
-                                {st.fromMemberName}
-                              </span>
-                              <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
-                                pays
-                              </span>
-                              <span className="font-bold text-[#10B981] break-words">
-                                {st.toMemberName}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-[var(--text-secondary)] mt-0.5 flex items-center gap-1.5 flex-wrap">
-                              <span>Simplified peer-to-peer settlement</span>
-                              <span>·</span>
-                              <span className="text-[#6366F1] font-semibold">
-                                {itemizedExpenses.length}{" "}
-                                {itemizedExpenses.length === 1 ? "expense item" : "itemized expenses"}{" "}
-                                ({isExpanded ? "Hide breakdown" : "Click to view & settle items"})
-                              </span>
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
-                          <div className="flex flex-col sm:items-end">
-                            <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
-                              Settlement Amount
-                            </span>
-                            <span className="text-base font-extrabold text-[var(--text-primary)]">
-                              {formatSplitCurrency(st.amount, activeSession.currency)}
-                            </span>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSuggestedSettlement(st);
-                              setShowSettlementModal(true);
-                            }}
-                            className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
-                            title="Settle full balance between members"
-                          >
-                            <Check size={13} strokeWidth={2.5} />
-                            <span>Mark as Settled</span>
-                          </button>
-                          <div className="p-1 text-[var(--text-secondary)]">
-                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          </div>
-                        </div>
+              <div className="space-y-5">
+                {/* 1. CapFlow Registered Members Settlements */}
+                {appMemberDebts.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                          CapFlow Members Settlements
+                        </h4>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#6366F1]/10 text-[#6366F1]">
+                          {appMemberDebts.length}
+                        </span>
                       </div>
+                      <span className="text-[10px] text-[var(--text-secondary)] hidden sm:inline">
+                        Only the designated payer can mark their payment as settled
+                      </span>
+                    </div>
 
-                      {/* Expandable Individual Itemized Expenses Breakdown */}
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="pt-3 border-t border-[var(--border-color)] space-y-2 overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
+                    <div className="space-y-2.5">
+                      {appMemberDebts.map((st) => {
+                        const fromMember = activeSession.members.find((m) => m.id === st.fromMemberId);
+                        const isPayerUser = user?.id && fromMember?.userId === user.id;
+                        const upToDate = getSettlementUpToDate(st);
+
+                        return (
+                          <div
+                            key={`${st.fromMemberId}-${st.toMemberId}`}
+                            className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/40 transition-all space-y-2.5"
                           >
-                            <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--text-secondary)]">
-                              <span>Individual Itemized Expenses Status</span>
-                              <span className="text-[10px] text-[#6366F1] font-bold">
-                                {pendingCount} pending · {itemizedExpenses.length - pendingCount} settled
-                              </span>
-                            </div>
-
-                            {itemizedExpenses.length === 0 ? (
-                              <p className="text-xs text-[var(--text-secondary)] py-1.5 italic bg-[var(--bg-primary)] px-3 rounded-xl border border-[var(--border-color)]/60">
-                                This balance reflects consolidated net adjustments across group expenses. You can settle it using the button above.
-                              </p>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {itemizedExpenses.map((item) => (
-                                  <div
-                                    key={item.expenseId}
-                                    className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between gap-2.5"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-xs font-bold text-[var(--text-primary)] truncate">
-                                          {item.title}
-                                        </span>
-                                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]/60">
-                                          {item.category}
-                                        </span>
-                                      </div>
-                                      <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
-                                        {new Date(item.date).toLocaleDateString("en-IN", {
-                                          day: "numeric",
-                                          month: "short",
-                                        })}{" "}
-                                        · {item.payerName} paid total{" "}
-                                        {formatSplitCurrency(item.totalAmount, item.currency)}
-                                      </p>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                      <div className="text-right">
-                                        <span className="text-xs font-extrabold text-[var(--text-primary)] block">
-                                          {formatSplitCurrency(item.shareAmount, item.currency)}
-                                        </span>
-                                        <span
-                                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full inline-block ${
-                                            item.settled
-                                              ? "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30"
-                                              : "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
-                                          }`}
-                                        >
-                                          {item.settledLabel || (item.settled ? "Settled ✓" : "Pending")}
-                                        </span>
-                                      </div>
-
-                                      {item.settled ? (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleSettleExpenseShare(item.expenseId, st.fromMemberId)
-                                          }
-                                          className="px-2 py-1 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
-                                          title="Undo settlement for this itemized expense"
-                                        >
-                                          Undo
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleSettleExpenseShare(item.expenseId, st.fromMemberId)
-                                          }
-                                          className="px-2.5 py-1 rounded-lg bg-[#10B981] text-white text-[10px] font-bold hover:bg-[#059669] active:scale-95 flex items-center gap-1 shadow-sm transition-all"
-                                          title="Mark this individual itemized expense as settled"
-                                        >
-                                          <Check size={11} strokeWidth={2.5} />
-                                          <span>Mark Settled</span>
-                                        </button>
-                                      )}
-                                    </div>
+                            <div className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
+                              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-[#6366F1]/10 text-[#6366F1] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+                                  <HandCoins size={18} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
+                                    <span className="font-bold text-[#EF4444] break-words">
+                                      {st.fromMemberName}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
+                                      pays
+                                    </span>
+                                    <span className="font-bold text-[#10B981] break-words">
+                                      {st.toMemberName}
+                                    </span>
                                   </div>
-                                ))}
+                                  <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] mt-1 flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar size={11} />
+                                      <span>
+                                        For expenses up to:{" "}
+                                        <strong className="text-[var(--text-primary)]">{upToDate}</strong>
+                                      </span>
+                                    </span>
+                                    <span>·</span>
+                                    {isPayerUser ? (
+                                      <span className="text-[#10B981] font-bold">You are the payer</span>
+                                    ) : (
+                                      <span>Awaiting payment from {st.fromMemberName}</span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
 
-            {/* ── Settlement & Adjustment History Section ── */}
-            <div className="pt-6 border-t border-[var(--border-color)] space-y-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                      Settlement & Adjustment History
-                    </h4>
-                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)]">
-                      {settlementHistory.length}
-                    </span>
+                              <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
+                                <div className="flex flex-col sm:items-end">
+                                  <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
+                                    Amount
+                                  </span>
+                                  <span className="text-base font-extrabold text-[var(--text-primary)]">
+                                    {formatSplitCurrency(st.amount, activeSession.currency)}
+                                  </span>
+                                </div>
+
+                                {isPayerUser ? (
+                                  <button
+                                    onClick={() => {
+                                      setSuggestedSettlement(st);
+                                      setShowSettlementModal(true);
+                                    }}
+                                    className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                                    title="Settle your debt"
+                                  >
+                                    <Check size={13} strokeWidth={2.5} />
+                                    <span>Mark as Settled</span>
+                                  </button>
+                                ) : (
+                                  <span className="px-2.5 py-1 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[10px] font-semibold flex-shrink-0">
+                                    Payer Action Only
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-                    Live history of payments marked as paid and debts automatically adjusted through mutual expenses.
-                  </p>
-                </div>
+                )}
 
-                {/* Filter Chips */}
-                {settlementHistory.length > 0 && (
-                  <div className="flex items-center gap-1.5 p-1 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)]/70 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                        historyFilter === "all"
-                          ? "bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm"
-                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                      }`}
-                    >
-                      All ({settlementHistory.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryFilter("marked_paid")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
-                        historyFilter === "marked_paid"
-                          ? "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 font-extrabold"
-                          : "text-[var(--text-secondary)] hover:text-[#10B981]"
-                      }`}
-                    >
-                      <span>Marked Paid</span>
-                      <span className="text-[9px] px-1 rounded-full bg-[#10B981]/20">
-                        {markedPaidCount}
+                {/* 2. Manual / Guest Members Settlements */}
+                {manualMemberDebts.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                          Manual Members Settlements (No App Account)
+                        </h4>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)]">
+                          {manualMemberDebts.length}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#6366F1] font-semibold">
+                        Any group member can mark manual member payments as settled
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryFilter("auto_adjustment")}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
-                        historyFilter === "auto_adjustment"
-                          ? "bg-[#6366F1]/15 text-[#6366F1] border border-[#6366F1]/30 font-extrabold"
-                          : "text-[var(--text-secondary)] hover:text-[#6366F1]"
-                      }`}
-                    >
-                      <span>Auto-Adjusted</span>
-                      <span className="text-[9px] px-1 rounded-full bg-[#6366F1]/20">
-                        {autoAdjustedCount}
-                      </span>
-                    </button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {manualMemberDebts.map((st) => {
+                        const upToDate = getSettlementUpToDate(st);
+
+                        return (
+                          <div
+                            key={`${st.fromMemberId}-${st.toMemberId}`}
+                            className="p-3.5 sm:p-4 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:border-[#10B981]/40 transition-all space-y-2.5"
+                          >
+                            <div className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
+                              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0">
+                                  <HandCoins size={18} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap text-sm leading-snug">
+                                    <span className="font-bold text-[#EF4444] break-words">
+                                      {st.fromMemberName}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-[var(--text-secondary)] px-1.5 py-0.5 rounded-md bg-[var(--bg-primary)] border border-[var(--border-color)]/60">
+                                      pays
+                                    </span>
+                                    <span className="font-bold text-[#10B981] break-words">
+                                      {st.toMemberName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] mt-1 flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar size={11} />
+                                      <span>
+                                        For expenses up to:{" "}
+                                        <strong className="text-[var(--text-primary)]">{upToDate}</strong>
+                                      </span>
+                                    </span>
+                                    <span>·</span>
+                                    <span className="text-[#6366F1] font-semibold">
+                                      Manual Member
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
+                                <div className="flex flex-col sm:items-end">
+                                  <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider sm:hidden">
+                                    Amount
+                                  </span>
+                                  <span className="text-base font-extrabold text-[var(--text-primary)]">
+                                    {formatSplitCurrency(st.amount, activeSession.currency)}
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() => {
+                                    setSuggestedSettlement(st);
+                                    setShowSettlementModal(true);
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                                  title="Mark manual member payment as settled"
+                                >
+                                  <Check size={13} strokeWidth={2.5} />
+                                  <span>Mark as Settled</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
+            )}
 
-              {/* History List or Empty State */}
-              {filteredSettlementHistory.length === 0 ? (
-                <div className="p-6 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] text-center space-y-1.5">
-                  <p className="text-xs font-semibold text-[var(--text-secondary)]">
-                    {settlementHistory.length === 0
-                      ? "No settlement history recorded yet."
-                      : `No ${historyFilter === "marked_paid" ? "marked paid" : "auto-adjusted"} records found.`}
-                  </p>
-                  <p className="text-[10px] text-[var(--text-secondary)]/80">
-                    When members settle balances or their payments offset each other across mutual expenses, history appears here.
+            {/* ── 4. Simple History of Settlement ── */}
+            <div className="pt-6 border-t border-[var(--border-color)] space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                    Settlement History ({settlementHistoryList.length})
+                  </h4>
+                  <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                    Records of who paid whom on which date with exact amounts.
                   </p>
                 </div>
+              </div>
+
+              {settlementHistoryList.length === 0 ? (
+                <div className="p-5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] text-center text-xs text-[var(--text-secondary)]">
+                  No settlement history recorded yet.
+                </div>
               ) : (
-                <div className="space-y-2.5">
-                  {filteredSettlementHistory.map((item) => {
-                    if (item.type === "marked_paid") {
-                      return (
-                        <motion.div
-                          key={item.id}
-                          layout
-                          className="p-3.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between text-xs gap-3 hover:border-[#10B981]/40 transition-all shadow-sm"
-                        >
-                          <div className="flex items-start gap-3 min-w-0 flex-1">
-                            <div className="w-8 h-8 rounded-xl bg-[#10B981]/15 text-[#10B981] flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <Check size={16} strokeWidth={2.5} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-bold text-[var(--text-primary)] break-words">
-                                  <span className="text-[#EF4444]">{item.fromMemberName}</span>
-                                  <span className="text-[var(--text-secondary)] font-normal mx-1">paid</span>
-                                  <span className="text-[#10B981]">{item.toMemberName}</span>
-                                </p>
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
-                                  Marked as Paid ✓
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-[var(--text-secondary)] mt-0.5 flex items-center gap-2 flex-wrap">
-                                <span>
-                                  {new Date(item.date).toLocaleDateString("en-IN", {
-                                    day: "numeric",
-                                    month: "short",
-                                    year: "numeric",
-                                  })}
-                                </span>
-                                {item.relatedExpenseTitle && (
-                                  <>
-                                    <span>·</span>
-                                    <span className="text-[#6366F1] font-semibold">
-                                      For: {item.relatedExpenseTitle}
-                                    </span>
-                                  </>
-                                )}
-                                {item.notes && (
-                                  <>
-                                    <span>·</span>
-                                    <span className="italic">{item.notes}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                <div className="space-y-2">
+                  {settlementHistoryList.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-3 sm:p-3.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between text-xs gap-3 shadow-sm hover:border-[var(--border-color)]/90 transition-all"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-[var(--text-primary)] break-words text-xs sm:text-sm">
+                          <span className="text-[#EF4444]">{item.fromName}</span>
+                          <span className="text-[var(--text-secondary)] font-normal mx-1.5">paid</span>
+                          <span className="text-[#10B981]">{item.toName}</span>
+                        </p>
+                        <p className="text-[10px] text-[var(--text-secondary)] mt-0.5">
+                          {new Date(item.date).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                          {item.notes ? ` · ${item.notes}` : ""}
+                        </p>
+                      </div>
 
-                          <div className="flex items-center gap-2.5 flex-shrink-0">
-                            <div className="text-right">
-                              <span className="text-sm font-extrabold text-[#10B981] block">
-                                {formatSplitCurrency(item.amount, item.currency)}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (confirm("Are you sure you want to undo this settlement payment?")) {
-                                  await deleteSettlement(activeSession.sessionId, item.settlementId);
-                                }
-                              }}
-                              className="px-2 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
-                              title="Undo this payment"
-                            >
-                              Undo
-                            </button>
-                          </div>
-                        </motion.div>
-                      );
-                    }
-
-                    // Auto-Adjusted History Item
-                    const isAdjExpanded = expandedAdjustmentIds.has(item.id);
-                    return (
-                      <motion.div
-                        key={item.id}
-                        layout
-                        className="p-3.5 bg-[var(--bg-card)] rounded-2xl border border-[#6366F1]/30 hover:border-[#6366F1]/50 transition-all shadow-sm space-y-2.5 cursor-pointer select-none"
-                        onClick={() => toggleAdjustmentExpansion(item.id)}
-                      >
-                        <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
-                          <div className="flex items-start gap-3 min-w-0 flex-1">
-                            <div className="w-8 h-8 rounded-xl bg-[#6366F1]/15 text-[#6366F1] flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <ArrowLeftRight size={16} strokeWidth={2.5} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-bold text-[var(--text-primary)]">
-                                  <span>{item.memberA.name}</span>
-                                  <span className="text-[#6366F1] mx-1.5 font-extrabold">⇄</span>
-                                  <span>{item.memberB.name}</span>
-                                </p>
-                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#6366F1]/15 text-[#6366F1] border border-[#6366F1]/30 flex items-center gap-1">
-                                  <Zap size={10} strokeWidth={2.5} />
-                                  <span>Automatically Adjusted</span>
-                                </span>
-                                {item.isFullySettled ? (
-                                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
-                                    Net ₹0 Fully Settled ✓
-                                  </span>
-                                ) : item.remainingNetDebt ? (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30">
-                                    Remaining: {item.remainingNetDebt.debtorName} owes {formatSplitCurrency(item.remainingNetDebt.amount, item.currency)}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <p className="text-[10.5px] text-[var(--text-secondary)] mt-1 leading-relaxed">
-                                <span className="font-semibold text-[var(--text-primary)]">{item.memberA.name}</span> paid {formatSplitCurrency(item.memberA.grossPaidForB, item.currency)} for {item.memberB.name}, which was{" "}
-                                <span className="text-[#6366F1] font-bold">automatically adjusted</span> against{" "}
-                                <span className="font-semibold text-[var(--text-primary)]">{item.memberB.name}</span> paying {formatSplitCurrency(item.memberB.grossPaidForA, item.currency)} for {item.memberA.name}. No cash transfer required!
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[var(--border-color)]/60 flex-shrink-0">
-                            <div className="flex flex-col sm:items-end">
-                              <span className="text-[9px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
-                                Adjusted Amount
-                              </span>
-                              <span className="text-sm font-extrabold text-[#6366F1]">
-                                {formatSplitCurrency(item.adjustedAmount, item.currency)}
-                              </span>
-                            </div>
-                            <div className="p-1 text-[var(--text-secondary)]">
-                              {isAdjExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Expandable Offsetting Expenses Breakdown */}
-                        <AnimatePresence>
-                          {isAdjExpanded && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="pt-2.5 border-t border-[var(--border-color)]/70 space-y-1.5 overflow-hidden"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <p className="text-[10px] uppercase font-bold text-[var(--text-secondary)] tracking-wider">
-                                Mutual Offsetting Expenses ({item.offsetExpenses.length})
-                              </p>
-                              <div className="space-y-1.5">
-                                {item.offsetExpenses.map((exp, expIdx) => (
-                                  <div
-                                    key={`${exp.expenseId}-${expIdx}`}
-                                    className="p-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)]/70 flex items-center justify-between text-[11px]"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <span className="font-bold text-[var(--text-primary)] truncate block">
-                                        {exp.title}
-                                      </span>
-                                      <span className="text-[10px] text-[var(--text-secondary)]">
-                                        {new Date(exp.date).toLocaleDateString("en-IN", {
-                                          day: "numeric",
-                                          month: "short",
-                                        })}{" "}
-                                        · <span className="font-semibold text-[#10B981]">{exp.payerName}</span> paid for{" "}
-                                        <span className="font-semibold text-[#EF4444]">{exp.beneficiaryName}</span>
-                                      </span>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                      <span className="font-extrabold text-[var(--text-primary)] block">
-                                        {formatSplitCurrency(exp.shareAmount, item.currency)}
-                                      </span>
-                                      <span className="text-[9px] font-semibold text-[#6366F1]">
-                                        Offset Share
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </motion.div>
-                    );
-                  })}
+                      <div className="flex items-center gap-2.5 flex-shrink-0">
+                        <span className="text-sm font-extrabold text-[#10B981]">
+                          {formatSplitCurrency(item.amount, activeSession.currency)} ✓
+                        </span>
+                        {item.canUndo && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm("Are you sure you want to undo this settlement payment?")) {
+                                await deleteSettlement(activeSession.sessionId, item.settlementId);
+                              }
+                            }}
+                            className="px-2 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
+                            title="Undo payment"
+                          >
+                            Undo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
