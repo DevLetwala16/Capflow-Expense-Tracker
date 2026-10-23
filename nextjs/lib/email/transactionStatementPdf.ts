@@ -1,4 +1,5 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { tryEmbedCapFlowLogo, drawCapFlowBrandHeader, cleanPDFText } from "@/lib/pdf/pdfBrand";
 
 export interface PDFTransactionItem {
   date: string;
@@ -32,6 +33,7 @@ export async function generateTransactionStatementPDF(
 
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logoImage = await tryEmbedCapFlowLogo(pdfDoc);
 
   const PAGE_WIDTH = 595.28; // A4
   const PAGE_HEIGHT = 841.89; // A4
@@ -55,20 +57,19 @@ export async function generateTransactionStatementPDF(
   const cExpense = rgb(0.86, 0.22, 0.22);     // Red
 
   // ── 1. Brand Header Bar ─────────────────────────────────────────────────────
-  page.drawText("CAPFLOW", {
-    x: MARGIN_LEFT,
-    y: y - 14,
-    size: 18,
-    font: fontBold,
-    color: cDark,
-  });
-
-  page.drawText("ACCOUNT TRANSACTION STATEMENT", {
-    x: MARGIN_LEFT,
-    y: y - 26,
-    size: 7.5,
-    font: fontBold,
-    color: cBrand,
+  drawCapFlowBrandHeader({
+    page,
+    topY: y,
+    marginLeft: MARGIN_LEFT,
+    logoImage,
+    title: "CAPFLOW",
+    titleSize: 18,
+    titleFont: fontBold,
+    titleColor: cDark,
+    subtitle: "ACCOUNT TRANSACTION STATEMENT",
+    subtitleSize: 7.5,
+    subtitleFont: fontBold,
+    subtitleColor: cBrand,
   });
 
   const todayStr = new Date().toLocaleDateString("en-IN", {
@@ -128,14 +129,14 @@ export async function generateTransactionStatementPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(data.recipientName || "Valued User", {
+  page.drawText(cleanPDFText(data.recipientName, "Valued User"), {
     x: col1X,
     y: infoCardY + 24,
     size: 9.5,
     font: fontBold,
     color: cDark,
   });
-  page.drawText(data.recipientEmail, {
+  page.drawText(cleanPDFText(data.recipientEmail, "N/A"), {
     x: col1X,
     y: infoCardY + 12,
     size: 8,
@@ -152,14 +153,14 @@ export async function generateTransactionStatementPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(data.periodLabel, {
+  page.drawText(cleanPDFText(data.periodLabel), {
     x: col2X,
     y: infoCardY + 24,
     size: 9.5,
     font: fontBold,
     color: cDark,
   });
-  page.drawText(`${data.startDate} to ${data.endDate}`, {
+  page.drawText(cleanPDFText(`${data.startDate} to ${data.endDate}`), {
     x: col2X,
     y: infoCardY + 12,
     size: 8,
@@ -232,7 +233,7 @@ export async function generateTransactionStatementPDF(
       borderWidth: 1,
     });
 
-    page.drawText(kpi.title, {
+    page.drawText(cleanPDFText(kpi.title), {
       x: cardX + 12,
       y: kpiY + 40,
       size: 7.5,
@@ -240,7 +241,7 @@ export async function generateTransactionStatementPDF(
       color: cMuted,
     });
 
-    page.drawText(kpi.value, {
+    page.drawText(cleanPDFText(kpi.value), {
       x: cardX + 12,
       y: kpiY + 22,
       size: 13,
@@ -248,7 +249,7 @@ export async function generateTransactionStatementPDF(
       color: kpi.valColor,
     });
 
-    page.drawText(kpi.sub, {
+    page.drawText(cleanPDFText(kpi.sub), {
       x: cardX + 12,
       y: kpiY + 9,
       size: 7,
@@ -268,7 +269,7 @@ export async function generateTransactionStatementPDF(
     color: cDark,
   });
 
-  page.drawText(`Chronological breakdown (${data.transactions.length} entries)`, {
+  page.drawText(cleanPDFText(`Chronological breakdown (${data.transactions.length} entries)`), {
     x: MARGIN_LEFT + 220,
     y: y - 8,
     size: 7.5,
@@ -395,7 +396,7 @@ export async function generateTransactionStatementPDF(
     });
 
     // Date
-    page.drawText(tx.date, {
+    page.drawText(cleanPDFText(tx.date), {
       x: colX.date,
       y: textY,
       size: 8,
@@ -403,9 +404,10 @@ export async function generateTransactionStatementPDF(
       color: cDark,
     });
 
-    // Title (truncate if too long)
+    // Title (truncate if too long, sanitized)
+    const cleanTitle = cleanPDFText(tx.title, "Untitled");
     const truncatedTitle =
-      tx.title.length > 22 ? tx.title.slice(0, 20) + "…" : tx.title;
+      cleanTitle.length > 22 ? cleanTitle.slice(0, 20) + "..." : cleanTitle;
     page.drawText(truncatedTitle, {
       x: colX.title,
       y: textY,
@@ -414,9 +416,10 @@ export async function generateTransactionStatementPDF(
       color: cDark,
     });
 
-    // Category
+    // Category (truncate if too long, sanitized)
+    const cleanCat = cleanPDFText(tx.category, "General");
     const truncatedCat =
-      tx.category.length > 16 ? tx.category.slice(0, 14) + "…" : tx.category;
+      cleanCat.length > 16 ? cleanCat.slice(0, 14) + "..." : cleanCat;
     page.drawText(truncatedCat, {
       x: colX.category,
       y: textY,
@@ -426,7 +429,7 @@ export async function generateTransactionStatementPDF(
     });
 
     // Payment Method
-    const methodStr = tx.paymentMethod.toUpperCase().replace("_", " ");
+    const methodStr = cleanPDFText(tx.paymentMethod.toUpperCase().replace(/_/g, " "), "OTHER");
     page.drawText(methodStr, {
       x: colX.method,
       y: textY,
@@ -438,7 +441,7 @@ export async function generateTransactionStatementPDF(
     // Amount (+ / -)
     const isInc = tx.type === "income";
     const amtStr = (isInc ? "+" : "-") + formatCurrency(tx.amount);
-    page.drawText(amtStr, {
+    page.drawText(cleanPDFText(amtStr), {
       x: colX.amount,
       y: textY,
       size: 8.5,
@@ -459,7 +462,7 @@ export async function generateTransactionStatementPDF(
       color: cBorder,
     });
 
-    p.drawText("CapFlow Financial Technologies • Confidential Account Statement", {
+    p.drawText("CapFlow Financial Technologies - Confidential Account Statement", {
       x: MARGIN_LEFT,
       y: 18,
       size: 7.5,

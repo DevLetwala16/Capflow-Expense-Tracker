@@ -1,4 +1,5 @@
 import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont } from 'pdf-lib';
+import { tryEmbedCapFlowLogo, drawCapFlowBrandHeader, cleanPDFText } from '@/lib/pdf/pdfBrand';
 import {
   SplitSession,
   MemberNetPosition,
@@ -71,6 +72,7 @@ export async function generateSplitterReportPDF(
 
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logoImage = await tryEmbedCapFlowLogo(pdfDoc);
 
   const PAGE_WIDTH = 595.28; // A4
   const PAGE_HEIGHT = 841.89; // A4
@@ -103,20 +105,19 @@ export async function generateSplitterReportPDF(
   }
 
   // ── 1. Top Brand Header Bar ───────────────────────────────────────────────
-  page.drawText('CAPFLOW', {
-    x: MARGIN_LEFT,
-    y: y - 14,
-    size: 16,
-    font: fontBold,
-    color: cDark,
-  });
-
-  page.drawText('GROUP EXPENSE & SPLITTER AUDIT REPORT', {
-    x: MARGIN_LEFT,
-    y: y - 26,
-    size: 7.5,
-    font: fontBold,
-    color: cBrand,
+  drawCapFlowBrandHeader({
+    page,
+    topY: y,
+    marginLeft: MARGIN_LEFT,
+    logoImage,
+    title: 'CAPFLOW',
+    titleSize: 16,
+    titleFont: fontBold,
+    titleColor: cDark,
+    subtitle: 'GROUP EXPENSE & SPLITTER AUDIT REPORT',
+    subtitleSize: 7.5,
+    subtitleFont: fontBold,
+    subtitleColor: cBrand,
   });
 
   const todayStr = new Date().toLocaleDateString('en-IN', {
@@ -173,21 +174,21 @@ export async function generateSplitterReportPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(session.name, {
+  page.drawText(cleanPDFText(session.name, 'Expense Session'), {
     x: MARGIN_LEFT + 12,
     y: y - 28,
     size: 11,
     font: fontBold,
     color: cDark,
   });
-  page.drawText(`ID: ${session.sessionId} | ${session.template.toUpperCase()} MODE`, {
+  page.drawText(cleanPDFText(`ID: ${session.sessionId} | ${session.template.toUpperCase()} MODE`), {
     x: MARGIN_LEFT + 12,
     y: y - 42,
     size: 8,
     font: fontRegular,
     color: cBrand,
   });
-  page.drawText(`Scope: ${effectiveLabel}`, {
+  page.drawText(cleanPDFText(`Scope: ${effectiveLabel}`), {
     x: MARGIN_LEFT + 12,
     y: y - 56,
     size: 7.5,
@@ -287,14 +288,14 @@ export async function generateSplitterReportPDF(
       ? `Dependent (Payer: ${pos.primaryPayerName || 'Linked'})`
       : 'Independent';
 
-    page.drawText(`${pos.memberName} (${pos.handle})`, {
+    page.drawText(cleanPDFText(`${pos.memberName} (${pos.handle})`), {
       x: tCol1,
       y: y - 12,
       size: 8,
       font: fontBold,
       color: cDark,
     });
-    page.drawText(roleStr, {
+    page.drawText(cleanPDFText(roleStr), {
       x: tCol2,
       y: y - 12,
       size: 7,
@@ -361,7 +362,7 @@ export async function generateSplitterReportPDF(
         borderWidth: 0.5,
       });
 
-      page.drawText(`${st.fromMemberName}`, {
+      page.drawText(cleanPDFText(st.fromMemberName), {
         x: MARGIN_LEFT + 12,
         y: y - 14,
         size: 8.5,
@@ -377,7 +378,7 @@ export async function generateSplitterReportPDF(
         color: cMuted,
       });
 
-      page.drawText(`${st.toMemberName}`, {
+      page.drawText(cleanPDFText(st.toMemberName), {
         x: MARGIN_LEFT + 170,
         y: y - 14,
         size: 8.5,
@@ -401,7 +402,7 @@ export async function generateSplitterReportPDF(
 
   // ── 5. Itemized Multi-Day Expense Ledger ───────────────────────────────────
   checkPageSpace(100);
-  page.drawText(`ITEMIZED EXPENSE LEDGER (${filteredSession.expenses.length} Records · ${effectiveLabel})`, {
+  page.drawText(cleanPDFText(`ITEMIZED EXPENSE LEDGER (${filteredSession.expenses.length} Records · ${effectiveLabel})`), {
     x: MARGIN_LEFT,
     y,
     size: 9.5,
@@ -446,7 +447,7 @@ export async function generateSplitterReportPDF(
 
     const expDate = exp.date ? exp.date.split('T')[0] : '';
     const paidByStr = exp.paidBy
-      .map((p) => `${memberNameMap.get(p.memberId) || 'Member'} (${p.amount})`)
+      .map((p) => `${cleanPDFText(memberNameMap.get(p.memberId), 'Member')} (${p.amount})`)
       .join(', ');
 
     page.drawText(expDate, {
@@ -457,7 +458,8 @@ export async function generateSplitterReportPDF(
       color: cMuted,
     });
 
-    page.drawText(`${exp.title} [${exp.category}]`, {
+    const expTitleLabel = cleanPDFText(`${exp.title} [${exp.category}]`);
+    page.drawText(expTitleLabel, {
       x: eCol2,
       y: y - 12,
       size: 8,
@@ -465,7 +467,7 @@ export async function generateSplitterReportPDF(
       color: cDark,
     });
 
-    page.drawText(`By: ${exp.createdBy?.name || 'Member'}`, {
+    page.drawText(cleanPDFText(`By: ${exp.createdBy?.name || 'Member'}`), {
       x: eCol3,
       y: y - 12,
       size: 7.5,
@@ -474,7 +476,7 @@ export async function generateSplitterReportPDF(
     });
 
     // Truncate paidBy string if too long
-    const cleanPaidStr = paidByStr.length > 22 ? paidByStr.slice(0, 20) + '...' : paidByStr;
+    const cleanPaidStr = cleanPDFText(paidByStr.length > 22 ? paidByStr.slice(0, 20) + '...' : paidByStr);
     page.drawText(cleanPaidStr, {
       x: eCol4,
       y: y - 12,
@@ -498,7 +500,7 @@ export async function generateSplitterReportPDF(
   const pageIndices = pdfDoc.getPageIndices();
   for (const idx of pageIndices) {
     const p = pdfDoc.getPage(idx);
-    p.drawText(`CapFlow Splitter Module · Page ${idx + 1} of ${pageIndices.length} · Financial Integrity Guarantee`, {
+    p.drawText(cleanPDFText(`CapFlow Splitter Module - Page ${idx + 1} of ${pageIndices.length} - Financial Integrity Guarantee`), {
       x: MARGIN_LEFT,
       y: 20,
       size: 7,

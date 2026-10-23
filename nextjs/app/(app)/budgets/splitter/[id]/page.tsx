@@ -840,14 +840,6 @@ export default function SplitterSessionDashboard() {
                     .join(", ");
 
                   const isExpanded = expandedExpenseIds.has(exp.id);
-                  const totalSplits = exp.splits.length;
-                  const settledSplits = exp.splits.filter((s) => {
-                    const member = activeSession.members.find((m) => m.id === s.memberId);
-                    if (!member) return false;
-                    const status = getExpenseMemberStatus(exp, member, activeSession);
-                    return status.status === "settled" || status.status === "paid";
-                  }).length;
-                  const allSettled = settledSplits === totalSplits && totalSplits > 0;
 
                   return (
                     <motion.div
@@ -892,15 +884,6 @@ export default function SplitterSessionDashboard() {
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[var(--bg-primary)] text-[var(--text-secondary)] flex-shrink-0">
                                 {exp.category}
                               </span>
-                              <span
-                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                                  allSettled
-                                    ? "bg-[#10B981]/15 text-[#10B981]"
-                                    : "bg-[#F59E0B]/15 text-[#F59E0B]"
-                                }`}
-                              >
-                                {allSettled ? "Settled ✓" : `${totalSplits - settledSplits} Pending`}
-                              </span>
                             </div>
 
                             {/* Payer & Creator Attribution */}
@@ -935,7 +918,7 @@ export default function SplitterSessionDashboard() {
                               </span>
                               <span>·</span>
                               <span className="text-[#6366F1] font-semibold">
-                                {isExpanded ? "Hide breakdown" : "Click to view status"}
+                                {isExpanded ? "Hide breakdown" : "Click to view breakdown"}
                               </span>
                             </div>
                           </div>
@@ -1083,27 +1066,15 @@ export default function SplitterSessionDashboard() {
                                         </div>
                                       </div>
 
-                                      {/* Member Due Amount (Instead of pending/paid status) */}
+                                      {/* Member Due Amount */}
                                       <div className="text-right flex-shrink-0">
-                                        {dueAmount > 0 ? (
-                                          <div>
-                                            <span className="text-xs font-extrabold text-[#EF4444] block">
-                                              Due: {formatSplitCurrency(dueAmount, exp.currency)}
-                                            </span>
-                                            <span className="text-[9px] font-semibold text-[var(--text-secondary)]">
-                                              Unpaid share
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <div>
-                                            <span className="text-xs font-extrabold text-[#10B981] block">
-                                              Due: {formatSplitCurrency(0, exp.currency)}
-                                            </span>
-                                            <span className="text-[9px] font-semibold text-[#10B981]">
-                                              Paid Upfront
-                                            </span>
-                                          </div>
-                                        )}
+                                        <span
+                                          className={`text-xs font-extrabold block ${
+                                            dueAmount > 0 ? "text-[#EF4444]" : "text-[#10B981]"
+                                          }`}
+                                        >
+                                          Due: {formatSplitCurrency(dueAmount, exp.currency)}
+                                        </span>
                                       </div>
                                     </div>
                                   );

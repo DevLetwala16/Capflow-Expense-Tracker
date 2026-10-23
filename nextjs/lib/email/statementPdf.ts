@@ -1,4 +1,5 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { tryEmbedCapFlowLogo, drawCapFlowBrandHeader, cleanPDFText } from "@/lib/pdf/pdfBrand";
 
 export interface PDFInstallment {
   number: number;
@@ -36,6 +37,7 @@ export async function generateEMIStatementPDF(
 
   const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logoImage = await tryEmbedCapFlowLogo(pdfDoc);
 
   const PAGE_WIDTH = 595.28; // A4
   const PAGE_HEIGHT = 841.89; // A4
@@ -67,21 +69,19 @@ export async function generateEMIStatementPDF(
   const cPendingText = rgb(0.42, 0.47, 0.56);
 
   // ── 1. Top Brand Header Bar ─────────────────────────────────────────────────
-  // Brand title
-  page.drawText("CAPFLOW", {
-    x: MARGIN_LEFT,
-    y: y - 14,
-    size: 18,
-    font: fontBold,
-    color: cDark,
-  });
-
-  page.drawText("PERSONAL FINANCE & LOAN TRACKER", {
-    x: MARGIN_LEFT,
-    y: y - 26,
-    size: 7.5,
-    font: fontBold,
-    color: cBrand,
+  drawCapFlowBrandHeader({
+    page,
+    topY: y,
+    marginLeft: MARGIN_LEFT,
+    logoImage,
+    title: "CAPFLOW",
+    titleSize: 18,
+    titleFont: fontBold,
+    titleColor: cDark,
+    subtitle: "PERSONAL FINANCE & LOAN TRACKER",
+    subtitleSize: 7.5,
+    subtitleFont: fontBold,
+    subtitleColor: cBrand,
   });
 
   // Right-aligned Statement Info Badge
@@ -143,14 +143,14 @@ export async function generateEMIStatementPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(data.recipientName || "Valued User", {
+  page.drawText(cleanPDFText(data.recipientName, "Valued User"), {
     x: col1X,
     y: infoCardY + 30,
     size: 9.5,
     font: fontBold,
     color: cDark,
   });
-  page.drawText(data.recipientEmail, {
+  page.drawText(cleanPDFText(data.recipientEmail, "N/A"), {
     x: col1X,
     y: infoCardY + 16,
     size: 8,
@@ -167,14 +167,14 @@ export async function generateEMIStatementPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(data.emiName, {
+  page.drawText(cleanPDFText(data.emiName, "EMI Facility"), {
     x: col2X,
     y: infoCardY + 30,
     size: 10,
     font: fontBold,
     color: cBrandDark,
   });
-  page.drawText(`Due on ${ordinal(data.dueDay)} each month`, {
+  page.drawText(cleanPDFText(`Due on ${ordinal(data.dueDay)} each month`), {
     x: col2X,
     y: infoCardY + 16,
     size: 8,
@@ -191,14 +191,14 @@ export async function generateEMIStatementPDF(
     font: fontBold,
     color: cMuted,
   });
-  page.drawText(`${data.totalInstallments} Installments (${data.totalInstallments} Mo.)`, {
+  page.drawText(cleanPDFText(`${data.totalInstallments} Installments (${data.totalInstallments} Mo.)`), {
     x: col3X,
     y: infoCardY + 30,
     size: 9.5,
     font: fontBold,
     color: cDark,
   });
-  page.drawText(`Started: ${data.startDate}`, {
+  page.drawText(cleanPDFText(`Started: ${data.startDate}`), {
     x: col3X,
     y: infoCardY + 16,
     size: 8,
@@ -254,7 +254,7 @@ export async function generateEMIStatementPDF(
       borderWidth: 1,
     });
 
-    page.drawText(kpi.title, {
+    page.drawText(cleanPDFText(kpi.title), {
       x: cardX + 12,
       y: kpiY + 41,
       size: 7.5,
@@ -262,7 +262,7 @@ export async function generateEMIStatementPDF(
       color: cMuted,
     });
 
-    page.drawText(kpi.value, {
+    page.drawText(cleanPDFText(kpi.value), {
       x: cardX + 12,
       y: kpiY + 23,
       size: 13.5,
@@ -270,7 +270,7 @@ export async function generateEMIStatementPDF(
       color: kpi.valColor,
     });
 
-    page.drawText(kpi.sub, {
+    page.drawText(cleanPDFText(kpi.sub), {
       x: cardX + 12,
       y: kpiY + 10,
       size: 7.5,
@@ -288,7 +288,7 @@ export async function generateEMIStatementPDF(
   );
 
   page.drawText(
-    `Repayment Progress: ${data.paidInstallments} of ${data.totalInstallments} installments completed`,
+    cleanPDFText(`Repayment Progress: ${data.paidInstallments} of ${data.totalInstallments} installments completed`),
     {
       x: MARGIN_LEFT,
       y: y - 8,
@@ -454,7 +454,7 @@ export async function generateEMIStatementPDF(
     });
 
     // Due date
-    page.drawText(inst.dueDate, {
+    page.drawText(cleanPDFText(inst.dueDate), {
       x: colX.dueDate,
       y: textY,
       size: 8.5,
@@ -463,7 +463,7 @@ export async function generateEMIStatementPDF(
     });
 
     // Monthly amount
-    page.drawText(formatCurrency(data.monthlyCost), {
+    page.drawText(cleanPDFText(formatCurrency(data.monthlyCost)), {
       x: colX.amount,
       y: textY,
       size: 8.5,
@@ -526,7 +526,7 @@ export async function generateEMIStatementPDF(
       color: cBorder,
     });
 
-    p.drawText("CapFlow Financial Tracker • Confidential Loan Statement", {
+    p.drawText("CapFlow Financial Tracker - Confidential Loan Statement", {
       x: MARGIN_LEFT,
       y: 18,
       size: 7.5,

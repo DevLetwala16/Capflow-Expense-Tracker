@@ -328,6 +328,7 @@ export default function ExportPage() {
     setLoading("pdf", true);
     try {
       const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+      const { tryEmbedCapFlowLogo, drawCapFlowBrandHeader, cleanPDFText } = await import("@/lib/pdf/pdfBrand");
 
       const transactions = await db.transactions.where("userId").equals(userId).toArray();
       const sorted = [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -335,6 +336,7 @@ export default function ExportPage() {
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const logoImage = await tryEmbedCapFlowLogo(pdfDoc);
 
       const PAGE_W = 595;
       const PAGE_H = 842;
@@ -346,11 +348,11 @@ export default function ExportPage() {
       const COL_AMOUNT = PAGE_W - MARGIN - 80;
 
       let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-      let y = PAGE_H - MARGIN;
+      let y = PAGE_H - 36;
 
       const newPage = () => {
         page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-        y = PAGE_H - MARGIN;
+        y = PAGE_H - 36;
       };
 
       const checkY = (needed = LINE_H + 4) => {
@@ -358,33 +360,66 @@ export default function ExportPage() {
       };
 
       // ── Header ────────────────────────────────────────────────────────────
-      page.drawText("CapFlow – Transaction Statement", {
-        x: MARGIN,
-        y,
-        size: 16,
-        font: boldFont,
-        color: rgb(0.388, 0.4, 0.945),
+      drawCapFlowBrandHeader({
+        page,
+        topY: y,
+        marginLeft: MARGIN,
+        logoImage,
+        title: "CAPFLOW",
+        titleSize: 16,
+        titleFont: boldFont,
+        titleColor: rgb(0.09, 0.13, 0.2),
+        subtitle: "ACCOUNT TRANSACTION STATEMENT & AUDIT EXPORT",
+        subtitleSize: 7.5,
+        subtitleFont: boldFont,
+        subtitleColor: rgb(0.39, 0.4, 0.95),
       });
-      y -= 24;
+
+      const formattedDate = new Date().toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      page.drawText("OFFICIAL EXPORT", {
+        x: PAGE_W - MARGIN - 140,
+        y: y - 14,
+        size: 9.5,
+        font: boldFont,
+        color: rgb(0.09, 0.13, 0.2),
+      });
+
+      page.drawText(`Generated: ${formattedDate}`, {
+        x: PAGE_W - MARGIN - 140,
+        y: y - 26,
+        size: 8,
+        font,
+        color: rgb(0.48, 0.53, 0.62),
+      });
+
+      y -= 38;
+
+      // Divider line
+      page.drawLine({
+        start: { x: MARGIN, y },
+        end: { x: PAGE_W - MARGIN, y },
+        thickness: 2,
+        color: rgb(0.39, 0.4, 0.95),
+      });
+      y -= 14;
 
       const dateRange =
         sorted.length > 0
-          ? `${sorted[sorted.length - 1].date} → ${sorted[0].date}`
+          ? `${sorted[sorted.length - 1].date} -> ${sorted[0].date}`
           : "No transactions";
-      page.drawText(`Period: ${dateRange}`, { x: MARGIN, y, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
-      y -= 10;
-      page.drawText(`Generated: ${new Date().toLocaleString()}`, {
+      page.drawText(`Period: ${dateRange}   |   Total Records: ${sorted.length}`, {
         x: MARGIN,
         y,
-        size: 9,
-        font,
-        color: rgb(0.5, 0.5, 0.5),
+        size: 8.5,
+        font: boldFont,
+        color: rgb(0.3, 0.3, 0.3),
       });
-      y -= 20;
-
-      // Divider
-      page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
-      y -= 14;
+      y -= 18;
 
       // ── Column headers ────────────────────────────────────────────────────
       const colColor = rgb(0.3, 0.3, 0.3);
@@ -401,15 +436,15 @@ export default function ExportPage() {
         checkY();
         const isExp = tx.type === "expense";
         const amtColor = isExp ? rgb(0.94, 0.27, 0.27) : rgb(0.06, 0.72, 0.51);
-        const amtStr = `${isExp ? "-" : "+"}${tx.currency} ${tx.amount.toLocaleString()}`;
-        page.drawText(tx.date, { x: COL_DATE, y, size: 8, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(String(tx.categoryId), { x: COL_CAT, y, size: 8, font, color: rgb(0.2, 0.2, 0.2) });
-        page.drawText(tx.type, { x: COL_TYPE, y, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
-        page.drawText(amtStr, { x: COL_AMOUNT, y, size: 8, font: boldFont, color: amtColor });
+        const amtStr = `${isExp ? "-" : "+"}${tx.currency || "Rs."} ${tx.amount.toLocaleString()}`;
+        page.drawText(cleanPDFText(tx.date), { x: COL_DATE, y, size: 8, font, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(cleanPDFText(String(tx.categoryId)), { x: COL_CAT, y, size: 8, font, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(cleanPDFText(tx.type), { x: COL_TYPE, y, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
+        page.drawText(cleanPDFText(amtStr), { x: COL_AMOUNT, y, size: 8, font: boldFont, color: amtColor });
         if (tx.notes) {
           y -= LINE_H - 4;
           checkY();
-          page.drawText(`  ${tx.notes}`, { x: COL_DATE + 8, y, size: 7, font, color: rgb(0.5, 0.5, 0.5) });
+          page.drawText(`  ${cleanPDFText(tx.notes)}`, { x: COL_DATE + 8, y, size: 7, font, color: rgb(0.5, 0.5, 0.5) });
         }
         y -= LINE_H;
       }

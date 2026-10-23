@@ -33,7 +33,7 @@ describe('Splitter PDF and Summary Generator', () => {
       {
         id: 'e1',
         sessionId: 'CAP-SPLIT-9999-X',
-        title: 'Seafood Dinner',
+        title: 'Ice Cream 🍦',
         amount: 2400,
         currency: 'INR',
         category: 'Food & Dining',

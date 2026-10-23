@@ -710,14 +710,18 @@ export function formatSplitCurrency(amount: number, currency: string = 'INR'): s
 export function formatPDFCurrency(amount: number, currency: string = 'INR'): string {
   const symbols: Record<string, string> = {
     INR: 'Rs. ',
+    '₹': 'Rs. ',
     USD: '$',
     EUR: 'EUR ',
+    '€': 'EUR ',
     GBP: 'GBP ',
+    '£': 'GBP ',
     JPY: 'JPY ',
+    '¥': 'JPY ',
     AED: 'AED ',
     CAD: 'CAD ',
   };
-  const sym = symbols[currency] || `${currency} `;
+  const sym = symbols[currency] || (currency === '₹' ? 'Rs. ' : `${currency} `);
   return `${sym}${amount.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
