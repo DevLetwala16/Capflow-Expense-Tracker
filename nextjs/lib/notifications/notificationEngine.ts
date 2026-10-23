@@ -3,7 +3,7 @@
 import { db, EMI, Transaction, Category, Budget } from "@/lib/db";
 import { useSettingsStore } from "@/lib/store/settingsStore";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
-import { PDFTransactionItem } from "@/lib/email/transactionStatementPdf";
+import type { PDFTransactionItem } from "@/lib/email/transactionStatementPdf";
 
 // ─── Event Dispatcher for In-App Toasts ───────────────────────────────────────
 export interface InAppNotificationEventDetail {

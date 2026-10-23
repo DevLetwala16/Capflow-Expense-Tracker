@@ -55,10 +55,12 @@ export function JoinSessionModal({
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
-  const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
-  const facingModeRef = useRef<"environment" | "user">("environment");
+  const [isMobile, setIsMobile] = useState(false);
+  const [availableWebcams, setAvailableWebcams] = useState<MediaDeviceInfo[]>([]);
+  const [activeWebcamIndex, setActiveWebcamIndex] = useState(0);
+
   const isStartingRef = useRef(false);
+  const selectedDeviceIdRef = useRef<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -202,9 +204,9 @@ export function JoinSessionModal({
     handleCodeDetectedRef.current = handleCodeDetected;
   }, [handleCodeDetected]);
 
-  // Start live video camera with unified laptop (single webcam) & mobile (multi-camera) support
+  // Start live video camera: 100% rear camera on phones, main webcam on laptops
   const startCamera = useCallback(
-    async (targetFacing?: "environment" | "user") => {
+    async (targetDeviceId?: string) => {
       // Guard against concurrent invocations causing hardware locks
       if (isStartingRef.current) {
         return;
@@ -218,8 +220,7 @@ export function JoinSessionModal({
           throw new Error("Live camera is not supported in this browser.");
         }
 
-        // CRITICAL FOR LAPTOPS: Release any existing camera tracks and wait 80ms
-        // so the Windows/macOS camera driver releases the exclusive hardware lock.
+        // Release any existing camera tracks and wait 120ms so camera driver releases lock
         if (scanIntervalRef.current) {
           clearInterval(scanIntervalRef.current);
           scanIntervalRef.current = null;
@@ -240,140 +241,135 @@ export function JoinSessionModal({
           } catch {}
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        await new Promise((resolve) => setTimeout(resolve, 120));
 
-        // Check connected video devices
-        let devices: MediaDeviceInfo[] = [];
-        try {
-          devices = await navigator.mediaDevices.enumerateDevices();
-        } catch (devErr) {
-          console.warn("[Camera] enumerateDevices error:", devErr);
-        }
-        const initialVideoDevs = devices.filter((d) => d.kind === "videoinput");
-        const hasMultiple = initialVideoDevs.length > 1;
-        setHasMultipleCameras(hasMultiple);
+        // Detect mobile (smartphone/tablet) vs desktop/laptop
+        const ua = navigator.userAgent || "";
+        const mobile =
+          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
+          (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+        setIsMobile(mobile);
 
-        const mode = targetFacing || facingModeRef.current;
         let newStream: MediaStream | null = null;
 
-        if (!hasMultiple) {
-          // ── LAPTOP / DESKTOP / SINGLE-CAMERA DEVICE ──
-          // Laptops typically have a single front-facing integrated or USB webcam.
-          // Never force "environment" (rear) constraint on a single-camera laptop.
+        if (mobile) {
+          // ── SMARTPHONE / TABLET: 100% REAR CAMERA ACCESS ONLY ──
+          // On mobile phones, QR codes are ALWAYS scanned using the primary rear camera.
+          // Step 1: Mobile preferred rear camera with ideal 1280x720 for crisp QR focus
           try {
             newStream = await navigator.mediaDevices.getUserMedia({
               video: {
+                facingMode: { ideal: "environment" },
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
               },
             });
           } catch (e1) {
-            console.warn("[Camera] Laptop ideal resolution failed, attempting basic video:", e1);
-            try {
-              newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-            } catch (e2) {
-              console.warn("[Camera] Laptop basic video failed:", e2);
-            }
-          }
-        } else {
-          // ── SMARTPHONE / TABLET / MULTI-CAMERA DEVICE ──
-          // Smooth switching between 1x primary rear camera and front selfie camera.
-          // Step 1: Exact facingMode with dimensions (forces mobile OS hardware camera switch)
-          try {
-            newStream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                facingMode: { exact: mode },
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-              },
-            });
-          } catch (e1) {
-            console.warn("[Camera] Exact facingMode with ideal dimensions failed:", e1);
+            console.warn("[Camera Mobile] Ideal environment facingMode failed:", e1);
           }
 
-          // Step 2: Unconstrained exact facingMode
+          // Step 2: Unconstrained environment facingMode (universal across all Android & iOS)
           if (!newStream) {
             try {
               newStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { exact: mode } },
+                video: { facingMode: { ideal: "environment" } },
               });
             } catch (e2) {
-              console.warn("[Camera] Unconstrained exact facingMode failed:", e2);
+              console.warn("[Camera Mobile] Unconstrained environment facingMode failed:", e2);
             }
           }
 
-          // Step 3: Device enumeration search (filter physical front vs rear hardware sensors)
+          // Step 3: Exact string environment
           if (!newStream) {
             try {
-              const currentVideoDevs = (await navigator.mediaDevices.enumerateDevices()).filter(
-                (d) => d.kind === "videoinput"
-              );
-
-              const targetDev =
-                currentVideoDevs.find((d) => {
-                  const l = (d.label || "").toLowerCase();
-                  if (mode === "environment") {
-                    return (
-                      (l.includes("back") ||
-                        l.includes("rear") ||
-                        l.includes("environment") ||
-                        l.includes("world")) &&
-                      !l.includes("ultra") &&
-                      !l.includes("macro") &&
-                      !l.includes("tele")
-                    );
-                  } else {
-                    return (
-                      (l.includes("front") ||
-                        l.includes("user") ||
-                        l.includes("selfie") ||
-                        l.includes("face")) &&
-                      !l.includes("ultra")
-                    );
-                  }
-                }) ||
-                (mode === "environment" ? currentVideoDevs[0] : currentVideoDevs[1]);
-
-              if (targetDev?.deviceId) {
-                newStream = await navigator.mediaDevices.getUserMedia({
-                  video: { deviceId: { exact: targetDev.deviceId } },
-                });
-              }
+              newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+              });
             } catch (e3) {
-              console.warn("[Camera] Device enumeration search failed:", e3);
+              console.warn("[Camera Mobile] String environment facingMode failed:", e3);
             }
           }
 
-          // Step 4: Ideal facingMode fallback
+          // Step 4: Device enumeration fallback finding the back/rear lens
           if (!newStream) {
+            try {
+              const devices = await navigator.mediaDevices.enumerateDevices();
+              const videoDevs = devices.filter((d) => d.kind === "videoinput");
+              const rearDev =
+                videoDevs.find((d) => {
+                  const l = (d.label || "").toLowerCase();
+                  return (
+                    (l.includes("back") ||
+                      l.includes("rear") ||
+                      l.includes("environment") ||
+                      l.includes("world")) &&
+                    !l.includes("ultra") &&
+                    !l.includes("macro") &&
+                    !l.includes("tele")
+                  );
+                }) || videoDevs[0];
+
+              if (rearDev?.deviceId) {
+                newStream = await navigator.mediaDevices.getUserMedia({
+                  video: { deviceId: { exact: rearDev.deviceId } },
+                });
+              }
+            } catch (e4) {
+              console.warn("[Camera Mobile] Device enumeration fallback failed:", e4);
+            }
+          }
+
+          // Step 5: Ultimate fallback
+          if (!newStream) {
+            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
+        } else {
+          // ── LAPTOP / DESKTOP: MAIN LAPTOP FRONT WEBCAM OR CONNECTED PHONE/EXTERNAL WEBCAM ──
+          const devId = targetDeviceId || selectedDeviceIdRef.current;
+          if (devId) {
             try {
               newStream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                  facingMode: { ideal: mode },
+                  deviceId: { exact: devId },
                   width: { ideal: 1280 },
                   height: { ideal: 720 },
                 },
               });
-            } catch (e4) {
-              console.warn("[Camera] Ideal facingMode with dimensions failed:", e4);
+            } catch (devErr) {
+              console.warn("[Camera Desktop] Specific webcam failed, falling back:", devErr);
             }
           }
 
-          // Step 5: Direct facingMode string
           if (!newStream) {
             try {
               newStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: mode },
+                video: {
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                },
               });
-            } catch (e5) {
-              console.warn("[Camera] Direct string facingMode failed:", e5);
+            } catch (e1) {
+              try {
+                newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+              } catch (e2) {
+                console.warn("[Camera Desktop] Basic video failed:", e2);
+              }
             }
           }
 
-          // Step 6: Ultimate fallback: any available video device
-          if (!newStream) {
-            newStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          }
+          // On desktop/laptop: enumerate webcams so user can toggle between laptop webcam & external/phone camera
+          try {
+            const freshDevs = await navigator.mediaDevices.enumerateDevices();
+            const freshVideo = freshDevs.filter((d) => d.kind === "videoinput");
+            setAvailableWebcams(freshVideo);
+            const currentTrack = newStream?.getVideoTracks()[0];
+            const currentId = currentTrack?.getSettings()?.deviceId;
+            if (currentId) {
+              selectedDeviceIdRef.current = currentId;
+              const idx = freshVideo.findIndex((d) => d.deviceId === currentId);
+              if (idx >= 0) setActiveWebcamIndex(idx);
+            }
+          } catch {}
         }
 
         if (!newStream) {
@@ -381,13 +377,6 @@ export function JoinSessionModal({
         }
 
         streamRef.current = newStream;
-
-        // Update multi-camera status after permission grant (labels now visible)
-        try {
-          const freshDevs = await navigator.mediaDevices.enumerateDevices();
-          const freshVideoDevs = freshDevs.filter((d) => d.kind === "videoinput");
-          setHasMultipleCameras(freshVideoDevs.length > 1);
-        } catch {}
 
         // Bind stream to video element with mobile inline playback attributes
         if (videoRef.current) {
@@ -407,10 +396,6 @@ export function JoinSessionModal({
             });
           }
         }
-
-        // Truthfully record the mode that was requested and active
-        setFacingMode(mode);
-        facingModeRef.current = mode;
 
         setCameraActive(true);
         setCameraStarting(false);
@@ -470,15 +455,16 @@ export function JoinSessionModal({
     }
   }, [cameraActive]);
 
-  const handleToggleFacingMode = async () => {
-    if (cameraStarting || isStartingRef.current) return;
-    const currentMode = facingModeRef.current;
-    const nextMode: "environment" | "user" = currentMode === "environment" ? "user" : "environment";
-
-    setFacingMode(nextMode);
-    facingModeRef.current = nextMode;
-
-    await startCamera(nextMode);
+  // Switch between webcams on Laptop / Desktop (e.g. laptop front webcam <-> external USB / phone camera)
+  const handleSwitchWebcam = async () => {
+    if (cameraStarting || isStartingRef.current || availableWebcams.length <= 1) return;
+    const nextIdx = (activeWebcamIndex + 1) % availableWebcams.length;
+    const nextDev = availableWebcams[nextIdx];
+    if (nextDev?.deviceId) {
+      setActiveWebcamIndex(nextIdx);
+      selectedDeviceIdRef.current = nextDev.deviceId;
+      await startCamera(nextDev.deviceId);
+    }
   };
 
   // Manual Form Submission
@@ -642,22 +628,23 @@ export function JoinSessionModal({
                   {/* Camera Active Floating Controls */}
                   {cameraActive && (
                     <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 z-10">
-                      {hasMultipleCameras && (
+                      {!isMobile && availableWebcams.length > 1 && (
                         <button
                           type="button"
                           disabled={cameraStarting}
-                          onClick={handleToggleFacingMode}
+                          onClick={handleSwitchWebcam}
                           className="px-2.5 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-[11px] font-semibold hover:bg-black/80 transition-colors border border-white/20 flex items-center gap-1.5 disabled:opacity-50"
+                          title="Switch between laptop webcam and external/phone camera"
                         >
                           <RefreshCw size={12} className={cameraStarting ? "animate-spin" : ""} />
-                          {facingMode === "environment" ? "Flip to Front" : "Flip to Rear"}
+                          <span>Switch Camera ({activeWebcamIndex + 1}/{availableWebcams.length})</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={stopCamera}
                         className={`px-2.5 py-1.5 rounded-xl bg-[#EF4444] text-white text-[11px] font-bold hover:bg-[#DC2626] transition-colors flex items-center gap-1.5 shadow-md ${
-                          !hasMultipleCameras ? "w-full justify-center" : ""
+                          isMobile || availableWebcams.length <= 1 ? "w-full justify-center" : ""
                         }`}
                       >
                         <CameraOff size={12} />
@@ -679,7 +666,9 @@ export function JoinSessionModal({
                         <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                           {cameraStarting
                             ? "Requesting camera permissions..."
-                            : "Point your camera at the group organizer's QR code"}
+                            : isMobile
+                            ? "Point your rear camera at the group organizer's QR code"
+                            : "Point your webcam at the organizer's QR code"}
                         </p>
                       </div>
 
@@ -760,6 +749,16 @@ export function JoinSessionModal({
                       <ArrowRight size={13} />
                     </button>
                   </motion.div>
+                )}
+
+                {/* Laptop / Desktop Helper Hint */}
+                {!isMobile && (
+                  <div className="p-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[11px] text-[var(--text-secondary)] flex items-start gap-2">
+                    <span>💡</span>
+                    <span>
+                      Scanning from a laptop? Hold up the QR code to your webcam, or switch cameras if you have an external or phone camera connected. You can also enter the ID manually.
+                    </span>
+                  </div>
                 )}
 
                 {/* Participant Details Form */}

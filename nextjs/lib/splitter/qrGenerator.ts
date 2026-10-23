@@ -29,9 +29,8 @@ export function generateQRCodeSVG(
   const ecl = options.errorCorrectionLevel || "M";
 
   try {
-    const qr = QRCode.create(text, {
-      errorCorrectionLevel: ecl,
-    });
+    const createFn = (QRCode as any).create || (QRCode as any).default?.create || QRCode;
+    const qr = typeof createFn === "function" ? createFn(text, { errorCorrectionLevel: ecl }) : (QRCode as any).create(text, { errorCorrectionLevel: ecl });
 
     const count = qr.modules.size;
     const totalCells = count + margin * 2;
