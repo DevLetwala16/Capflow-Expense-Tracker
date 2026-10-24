@@ -44,6 +44,8 @@ interface SettingsState {
   profilePhoto: string;
   /** Immutable member ID shown on the profile card */
   memberId: string;
+  paymentQrCode: string;
+  paymentUpiId: string;
 
   // ── Privacy & Security ─────────────────────────────────────────────────────
   /** When true, balance figures are blurred/hidden until the user taps to reveal */
@@ -118,6 +120,8 @@ interface SettingsState {
   setPhone: (val: string) => void;
   setProfilePhoto: (val: string) => void;
   setMemberId: (val: string) => void;
+  setPaymentQrCode: (val: string) => void;
+  setPaymentUpiId: (val: string) => void;
   setBalanceMasked: (val: boolean) => void;
   setAutoLockTimeout: (val: AutoLockTimeout) => void;
   setFontScale: (val: FontScale) => void;
@@ -208,6 +212,8 @@ const DEFAULTS = {
   phone: '',
   profilePhoto: '',
   memberId: '',
+  paymentQrCode: '',
+  paymentUpiId: '',
 
   // privacy & security
   balanceMasked: false,
@@ -287,6 +293,8 @@ export const useSettingsStore = create<SettingsState>()(
       setPhone: (val) => set({ phone: val }),
       setProfilePhoto: (val) => set({ profilePhoto: val }),
       setMemberId: (val) => set({ memberId: val }),
+      setPaymentQrCode: (val) => set({ paymentQrCode: val }),
+      setPaymentUpiId: (val) => set({ paymentUpiId: val }),
       setBalanceMasked: (val) => set({ balanceMasked: val }),
       setAutoLockTimeout: (val) => set({ autoLockTimeout: val }),
       setFontScale: (val) => set({ fontScale: val }),
@@ -369,6 +377,8 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         phone: s.phone ?? DEFAULTS.phone,
         profilePhoto: s.profilePhoto ?? DEFAULTS.profilePhoto,
         memberId: s.memberId ?? DEFAULTS.memberId,
+        paymentQrCode: s.paymentQrCode ?? DEFAULTS.paymentQrCode,
+        paymentUpiId: s.paymentUpiId ?? DEFAULTS.paymentUpiId,
 
         // privacy & security
         balanceMasked: s.balanceMasked ?? DEFAULTS.balanceMasked,
@@ -434,6 +444,8 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         phone: state.phone,
         profilePhoto: state.profilePhoto,
         memberId: state.memberId,
+        paymentQrCode: state.paymentQrCode,
+        paymentUpiId: state.paymentUpiId,
 
         // privacy & security
         balanceMasked: state.balanceMasked,

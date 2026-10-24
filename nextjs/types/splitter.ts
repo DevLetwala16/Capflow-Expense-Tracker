@@ -14,6 +14,8 @@ export interface SplitMember {
   primaryPayerMemberId?: string; // id of independent member who covers their dues
   familyCount?: number; // Number of family members represented (default 1, e.g. 4 for family of 4)
   userId?: string; // optional linked CapFlow user account ID
+  paymentQrCode?: string; // Cloudinary URL of payment QR code
+  upiId?: string; // UPI ID (e.g. user@okhdfcbank) if available
 }
 
 export interface SplitPayerEntry {

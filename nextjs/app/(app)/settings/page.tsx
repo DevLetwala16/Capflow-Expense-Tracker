@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
+  QrCode,
   Sun,
   Database,
   Shield,
@@ -57,6 +58,7 @@ import {
   requestNotificationPermission,
 } from "@/lib/notifications/notificationEngine";
 import { DevicePermissionModal } from "@/components/shared/DevicePermissionModal";
+import { PaymentQRModal } from "@/components/shared/PaymentQRModal";
 
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 
@@ -265,6 +267,7 @@ export default function SettingsPage() {
     setProfilePhoto,
     memberId,
     setMemberId,
+    paymentQrCode,
 
     // App Lock & Sessions
     appLockEnabled,
@@ -324,6 +327,7 @@ export default function SettingsPage() {
 
   const { emis } = useEMIStore();
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [showPaymentQRModal, setShowPaymentQRModal] = useState(false);
   const [testingNotif, setTestingNotif] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
 
@@ -965,6 +969,38 @@ export default function SettingsPage() {
             </select>
           </div>
 
+          {/* Payment QR Code */}
+          <button
+            onClick={() => setShowPaymentQRModal(true)}
+            className="w-full flex items-center justify-between px-4 py-3.5 border-t border-[var(--border-color)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
+                <QrCode size={15} className="text-[#6366F1]" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Payment QR Code</p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {user?.paymentQrCode || paymentQrCode
+                    ? "QR code active • Ready for Splitter settlements"
+                    : "Add your UPI / payment QR for receiving payments"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {user?.paymentQrCode || paymentQrCode ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#10B981]/10 text-xs font-bold text-[#10B981] border border-[#10B981]/20">
+                  <Check size={12} strokeWidth={2.5} />
+                  Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-color)]">
+                  Add QR
+                </span>
+              )}
+              <ChevronRight size={15} className="text-[var(--text-secondary)]" />
+            </div>
+          </button>
           {/* Fiscal Year Configuration */}
           <div className="flex items-center justify-between px-4 py-3.5 border-t border-[var(--border-color)]">
             <div className="flex items-center gap-3">
@@ -1319,6 +1355,12 @@ export default function SettingsPage() {
       <DevicePermissionModal
         forceOpen={showPermissionModal}
         onClose={() => setShowPermissionModal(false)}
+      />
+
+      {/* ── Payment QR Code Modal ── */}
+      <PaymentQRModal
+        open={showPaymentQRModal}
+        onClose={() => setShowPaymentQRModal(false)}
       />
     </div>
   );

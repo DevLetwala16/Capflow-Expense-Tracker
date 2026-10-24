@@ -179,3 +179,42 @@ export async function decodeQRCodeFromFile(file: File | Blob): Promise<string | 
     }
   });
 }
+
+/**
+ * Decodes a QR code from a remote image URL (e.g. Cloudinary or data URL)
+ */
+export async function decodeQRCodeFromUrl(url: string): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    const blob = await res.blob();
+    return decodeQRCodeFromFile(blob);
+  } catch {
+    return new Promise<string | null>((resolve) => {
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return resolve(null);
+            ctx.drawImage(img, 0, 0);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            resolve(code?.data || null);
+          } catch {
+            resolve(null);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+}
+

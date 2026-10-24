@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
+import User from '@/lib/mongodb/userModel';
 import { SplitAuditLog } from '@/types/splitter';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,47 @@ export async function GET(
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // Enrich members with latest paymentQrCode and upiId from Users collection if available
+    if (session.members && session.members.length > 0) {
+      const userIds = session.members
+        .map((m: any) => m.userId)
+        .filter((uid: string) => uid && uid.match(/^[0-9a-fA-F]{24}$/));
+      const emails = session.members
+        .map((m: any) => m.email?.toLowerCase())
+        .filter(Boolean);
+
+      if (userIds.length > 0 || emails.length > 0) {
+        const users = await User.find({
+          $or: [
+            ...(userIds.length > 0 ? [{ _id: { $in: userIds } }] : []),
+            ...(emails.length > 0 ? [{ email: { $in: emails } }] : []),
+          ],
+        })
+          .select('_id email paymentQrCode upiId')
+          .lean();
+
+        const userMap = new Map<string, any>();
+        for (const u of users) {
+          userMap.set(u._id.toString(), u);
+          if (u.email) userMap.set(u.email.toLowerCase(), u);
+        }
+
+        session.members = session.members.map((m: any) => {
+          const matchedUser =
+            (m.userId && userMap.get(m.userId)) ||
+            (m.email && userMap.get(m.email.toLowerCase()));
+          if (matchedUser) {
+            return {
+              ...m,
+              paymentQrCode: matchedUser.paymentQrCode || m.paymentQrCode || '',
+              upiId: matchedUser.upiId || m.upiId || '',
+            };
+          }
+          return m;
+        });
+      }
     }
 
     return NextResponse.json({ session });

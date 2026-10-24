@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
         email: user.email,
         name: user.name,
         avatar: user.avatar,
+        paymentQrCode: user.paymentQrCode || "",
+        upiId: user.upiId || "",
       },
     });
   } catch {

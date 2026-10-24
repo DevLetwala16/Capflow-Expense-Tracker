@@ -4,6 +4,9 @@ export interface IUser extends Document {
   email: string;
   name: string;
   avatar?: string;
+  paymentQrCode?: string;
+  paymentQrPublicId?: string;
+  upiId?: string;
   googleId?: string;
   facebookId?: string;
   appleId?: string;
@@ -25,6 +28,9 @@ const UserSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true },
     name: { type: String, required: true },
     avatar: { type: String },
+    paymentQrCode: { type: String },
+    paymentQrPublicId: { type: String },
+    upiId: { type: String },
     googleId: { type: String, sparse: true },
     facebookId: { type: String, sparse: true },
     appleId: { type: String, sparse: true },

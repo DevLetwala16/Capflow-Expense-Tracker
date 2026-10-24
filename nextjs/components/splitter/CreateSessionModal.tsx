@@ -60,7 +60,13 @@ const MEMBER_COLORS = [
 interface CreateSessionModalProps {
   open: boolean;
   onClose: () => void;
-  currentUser: { id: string; name: string; email?: string } | null;
+  currentUser: {
+    id: string;
+    name: string;
+    email?: string;
+    paymentQrCode?: string;
+    upiId?: string;
+  } | null;
   defaultCurrency?: string;
   onCreate: (data: {
     name: string;
@@ -105,6 +111,8 @@ export function CreateSessionModal({
       familyCount: 1,
       userId: currentUser?.id,
       email: currentUser?.email,
+      paymentQrCode: currentUser?.paymentQrCode,
+      upiId: currentUser?.upiId,
     },
   ]);
 

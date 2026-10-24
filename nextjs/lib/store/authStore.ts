@@ -6,12 +6,15 @@ export interface AuthUser {
   email: string;
   name: string;
   avatar?: string;
+  paymentQrCode?: string;
+  upiId?: string;
 }
 
 interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   setUser: (user: AuthUser | null) => void;
+  updateUser: (partial: Partial<AuthUser>) => void;
   logout: () => void;
   /** Call this when switching between accounts to flush in-memory store state */
   clearDataStores: () => void;
@@ -30,6 +33,12 @@ export const useAuthStore = create<AuthState>()(
           get().clearDataStores();
         }
         set({ user, isAuthenticated: !!user });
+      },
+
+      updateUser: (partial) => {
+        const prev = get().user;
+        if (!prev) return;
+        set({ user: { ...prev, ...partial } });
       },
 
       logout: () => {

@@ -54,6 +54,7 @@ import {
 import { QRCodeModal } from "@/components/splitter/QRCodeModal";
 import { AddSplitExpenseModal } from "@/components/splitter/AddSplitExpenseModal";
 import { RecordSettlementModal } from "@/components/splitter/RecordSettlementModal";
+import { PaymentSettlementQRModal } from "@/components/splitter/PaymentSettlementQRModal";
 import { AddMemberModal } from "@/components/splitter/AddMemberModal";
 import { EditSessionModal } from "@/components/splitter/EditSessionModal";
 import { DeleteSessionModal } from "@/components/splitter/DeleteSessionModal";
@@ -105,6 +106,8 @@ export default function SplitterSessionDashboard() {
   const [editingExpense, setEditingExpense] = useState<SplitExpenseItem | null>(null);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [suggestedSettlement, setSuggestedSettlement] = useState<SettlementTransaction | null>(null);
+  const [showQrPaymentModal, setShowQrPaymentModal] = useState(false);
+  const [qrPaymentTransaction, setQrPaymentTransaction] = useState<SettlementTransaction | null>(null);
 
   // Expanded itemized view state for Expenses tab & Roadmap tab
   const [expandedExpenseIds, setExpandedExpenseIds] = useState<Set<string>>(new Set());
@@ -1304,23 +1307,37 @@ export default function SplitterSessionDashboard() {
                                   </span>
                                 </div>
 
-                                {isPayerUser ? (
+                                <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
                                   <button
                                     onClick={() => {
-                                      setSuggestedSettlement(st);
-                                      setShowSettlementModal(true);
+                                      setQrPaymentTransaction(st);
+                                      setShowQrPaymentModal(true);
                                     }}
-                                    className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
-                                    title="Settle your debt"
+                                    className="px-2.5 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1]/20 border border-[#6366F1]/30 text-[#6366F1] text-xs font-bold active:scale-95 transition-all flex items-center gap-1 flex-shrink-0"
+                                    title="View Receiver QR code and launch payment apps"
                                   >
-                                    <Check size={13} strokeWidth={2.5} />
-                                    <span>Mark as Settled</span>
+                                    <QrCode size={13} strokeWidth={2.5} />
+                                    <span>QR Pay</span>
                                   </button>
-                                ) : (
-                                  <span className="px-2.5 py-1 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[10px] font-semibold flex-shrink-0">
-                                    Payer Action Only
-                                  </span>
-                                )}
+
+                                  {isPayerUser ? (
+                                    <button
+                                      onClick={() => {
+                                        setSuggestedSettlement(st);
+                                        setShowSettlementModal(true);
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                                      title="Settle your debt"
+                                    >
+                                      <Check size={13} strokeWidth={2.5} />
+                                      <span>Mark as Settled</span>
+                                    </button>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[10px] font-semibold flex-shrink-0">
+                                      Payer Action Only
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1399,17 +1416,31 @@ export default function SplitterSessionDashboard() {
                                   </span>
                                 </div>
 
-                                <button
-                                  onClick={() => {
-                                    setSuggestedSettlement(st);
-                                    setShowSettlementModal(true);
-                                  }}
-                                  className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
-                                  title="Mark manual member payment as settled"
-                                >
-                                  <Check size={13} strokeWidth={2.5} />
-                                  <span>Mark as Settled</span>
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                                  <button
+                                    onClick={() => {
+                                      setQrPaymentTransaction(st);
+                                      setShowQrPaymentModal(true);
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1]/20 border border-[#6366F1]/30 text-[#6366F1] text-xs font-bold active:scale-95 transition-all flex items-center gap-1 flex-shrink-0"
+                                    title="View Receiver QR code and launch payment apps"
+                                  >
+                                    <QrCode size={13} strokeWidth={2.5} />
+                                    <span>QR Pay</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setSuggestedSettlement(st);
+                                      setShowSettlementModal(true);
+                                    }}
+                                    className="px-3.5 py-1.5 rounded-xl bg-[#10B981] text-white text-xs font-bold hover:bg-[#059669] active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0"
+                                    title="Mark manual member payment as settled"
+                                  >
+                                    <Check size={13} strokeWidth={2.5} />
+                                    <span>Mark as Settled</span>
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1734,6 +1765,29 @@ export default function SplitterSessionDashboard() {
         suggestedTransaction={suggestedSettlement}
         onRecord={async (stlData) => {
           await recordSettlement(activeSession.sessionId, stlData);
+        }}
+      />
+
+      <PaymentSettlementQRModal
+        open={showQrPaymentModal}
+        onClose={() => {
+          setShowQrPaymentModal(false);
+          setQrPaymentTransaction(null);
+        }}
+        transaction={qrPaymentTransaction}
+        members={activeSession.members}
+        currency={activeSession.currency}
+        onMarkSettled={async (notes) => {
+          if (!qrPaymentTransaction) return;
+          await recordSettlement(activeSession.sessionId, {
+            fromMemberId: qrPaymentTransaction.fromMemberId,
+            toMemberId: qrPaymentTransaction.toMemberId,
+            amount: qrPaymentTransaction.amount,
+            notes: notes || undefined,
+            date: new Date().toISOString(),
+          });
+          setShowQrPaymentModal(false);
+          setQrPaymentTransaction(null);
         }}
       />
 

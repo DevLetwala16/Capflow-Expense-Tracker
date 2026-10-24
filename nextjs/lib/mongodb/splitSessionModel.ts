@@ -39,6 +39,8 @@ const SplitMemberSchema = new Schema<SplitMember>(
     primaryPayerMemberId: { type: String },
     familyCount: { type: Number, default: 1 },
     userId: { type: String },
+    paymentQrCode: { type: String },
+    upiId: { type: String },
   },
   { _id: false }
 );

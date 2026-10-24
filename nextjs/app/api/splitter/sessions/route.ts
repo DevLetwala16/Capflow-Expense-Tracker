@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
+import User from '@/lib/mongodb/userModel';
 import { generateSessionId } from '@/lib/splitter/debtEngine';
 import { SplitMember, SplitAuditLog } from '@/types/splitter';
 import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
@@ -50,6 +51,47 @@ export async function GET(req: NextRequest) {
         { 'members.userId': queryUserId },
       ],
     }).sort({ updatedAt: -1 }).lean();
+
+    // Enrich members with latest paymentQrCode and upiId from Users
+    const allUserIds = new Set<string>();
+    const allEmails = new Set<string>();
+    for (const s of sessions) {
+      for (const m of (s.members || [])) {
+        if (m.userId && m.userId.match(/^[0-9a-fA-F]{24}$/)) allUserIds.add(m.userId);
+        if (m.email) allEmails.add(m.email.toLowerCase());
+      }
+    }
+
+    if (allUserIds.size > 0 || allEmails.size > 0) {
+      const users = await User.find({
+        $or: [
+          ...(allUserIds.size > 0 ? [{ _id: { $in: Array.from(allUserIds) } }] : []),
+          ...(allEmails.size > 0 ? [{ email: { $in: Array.from(allEmails) } }] : []),
+        ],
+      }).select('_id email paymentQrCode upiId').lean();
+
+      const userMap = new Map<string, any>();
+      for (const u of users) {
+        userMap.set(u._id.toString(), u);
+        if (u.email) userMap.set(u.email.toLowerCase(), u);
+      }
+
+      for (const s of sessions) {
+        if (s.members) {
+          s.members = s.members.map((m: any) => {
+            const matchedUser = (m.userId && userMap.get(m.userId)) || (m.email && userMap.get(m.email?.toLowerCase()));
+            if (matchedUser) {
+              return {
+                ...m,
+                paymentQrCode: matchedUser.paymentQrCode || m.paymentQrCode || '',
+                upiId: matchedUser.upiId || m.upiId || '',
+              };
+            }
+            return m;
+          });
+        }
+      }
+    }
 
     return NextResponse.json({ sessions });
   } catch (error: any) {

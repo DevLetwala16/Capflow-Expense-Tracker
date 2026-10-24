@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectMongoDB } from '@/lib/mongodb/connection';
 import SplitSessionModel from '@/lib/mongodb/splitSessionModel';
+import User from '@/lib/mongodb/userModel';
 import { SplitMember, SplitAuditLog } from '@/types/splitter';
 import { sendWebPushToUsers } from '@/lib/notifications/webPushServer';
 
@@ -77,6 +78,21 @@ export async function POST(req: NextRequest) {
     const assignedColor =
       member.color || memberColors[session.members.length % memberColors.length];
 
+    let userPaymentQr = member.paymentQrCode;
+    let userUpiId = member.upiId;
+
+    if (!userPaymentQr && member.userId) {
+      try {
+        const u = await User.findById(member.userId).select('paymentQrCode upiId').lean();
+        if (u) {
+          userPaymentQr = (u as any).paymentQrCode;
+          userUpiId = (u as any).upiId;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const joinedMember: SplitMember = {
       id: member.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       name: member.name.trim(),
@@ -91,6 +107,8 @@ export async function POST(req: NextRequest) {
       primaryPayerMemberId: member.primaryPayerMemberId,
       familyCount: typeof member.familyCount === "number" && member.familyCount > 0 ? member.familyCount : 1,
       userId: member.userId,
+      paymentQrCode: userPaymentQr,
+      upiId: userUpiId,
     };
 
     session.members.push(joinedMember);
