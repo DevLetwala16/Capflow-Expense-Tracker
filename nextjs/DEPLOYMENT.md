@@ -116,6 +116,11 @@ Test at these widths using browser devtools:
 | `SMTP_USER` | Your Gmail address |
 | `SMTP_PASS` | Gmail App Password |
 | `EMAIL_FROM` | `CapFlow <you@gmail.com>` |
+| `CLOUDINARY_URL` | Cloudinary connection string (`cloudinary://...`) |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name (e.g. `e42rd7k1`) |
+| `CLOUDINARY_API_KEY` | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
+| `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name for client |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console |
 | `GOOGLE_CALLBACK_URL` | `https://your-app.vercel.app/api/auth/google/callback` |
