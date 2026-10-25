@@ -272,7 +272,7 @@ export function AddEditEMISheet({ open, onClose, editEMI }: AddEditEMISheetProps
                 <Field label="EMI Name" error={errors.name?.message}>
                   <input
                     type="text"
-                    placeholder="e.g. Home Loan, Car EMI"
+                    placeholder="EMI Name"
                     {...register("name")}
                     className={inputCls}
                   />

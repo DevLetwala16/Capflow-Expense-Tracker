@@ -173,6 +173,7 @@ export async function DELETE(
     const settlementId = body.settlementId || url.searchParams.get('settlementId');
     const expenseId = body.expenseId || url.searchParams.get('expenseId');
     const memberId = body.memberId || url.searchParams.get('memberId');
+    const deleteAll = body.deleteAll === true || url.searchParams.get('deleteAll') === 'true' || settlementId === 'all';
 
     const session = await SplitSessionModel.findOne({
       $or: [
@@ -186,30 +187,53 @@ export async function DELETE(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    // 1. Remove settlement if settlementId given or matching expenseId
-    if (settlementId) {
-      session.settlements = session.settlements.filter((s: any) => s.id !== settlementId);
-    } else if (expenseId) {
-      session.settlements = session.settlements.filter((s: any) => s.expenseId !== expenseId);
-    }
+    if (deleteAll) {
+      // Delete all settlements and reset all splits
+      session.settlements = [];
+      session.expenses.forEach((exp: any) => {
+        exp.splits?.forEach((s: any) => {
+          s.settled = false;
+          s.settledAt = undefined;
+          s.settlementId = undefined;
+        });
+      });
 
-    // 2. Unsettle expense split if expenseId given
-    if (expenseId) {
-      const exp = session.expenses.find((e: any) => e.id === expenseId);
-      if (exp) {
-        if (memberId) {
-          const split = exp.splits.find((s: any) => s.memberId === memberId);
-          if (split) {
-            split.settled = false;
-            split.settledAt = undefined;
-            split.settlementId = undefined;
+      const auditLog: SplitAuditLog = {
+        id: `log_${Date.now()}_del_all_stl`,
+        sessionId: session.sessionId,
+        timestamp: new Date().toISOString(),
+        memberId: body.deletedBy?.memberId || 'system',
+        memberName: body.deletedBy?.name || 'Member',
+        action: 'Deleted all settlement history records',
+      };
+      session.auditLogs.unshift(auditLog);
+      session.markModified('auditLogs');
+    } else {
+      // 1. Remove settlement if settlementId given or matching expenseId
+      if (settlementId) {
+        session.settlements = session.settlements.filter((s: any) => s.id !== settlementId);
+      } else if (expenseId) {
+        session.settlements = session.settlements.filter((s: any) => s.expenseId !== expenseId);
+      }
+
+      // 2. Unsettle expense split if expenseId given
+      if (expenseId) {
+        const exp = session.expenses.find((e: any) => e.id === expenseId);
+        if (exp) {
+          if (memberId) {
+            const split = exp.splits.find((s: any) => s.memberId === memberId);
+            if (split) {
+              split.settled = false;
+              split.settledAt = undefined;
+              split.settlementId = undefined;
+            }
+          } else {
+            exp.splits.forEach((s: any) => {
+              s.settled = false;
+              s.settledAt = undefined;
+              s.settlementId = undefined;
+            });
           }
-        } else {
-          exp.splits.forEach((s: any) => {
-            s.settled = false;
-            s.settledAt = undefined;
-            s.settlementId = undefined;
-          });
         }
       }
     }

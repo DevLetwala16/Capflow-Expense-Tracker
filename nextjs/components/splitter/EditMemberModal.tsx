@@ -167,7 +167,7 @@ export function EditMemberModal({
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Rahul Sharma"
+                  placeholder="Name"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
                 />
               </div>
@@ -185,7 +185,7 @@ export function EditMemberModal({
                     type="text"
                     value={handle}
                     onChange={(e) => setHandle(e.target.value)}
-                    placeholder="rahul"
+                    placeholder="Handle / Username"
                     className="w-full py-2.5 pr-3 bg-transparent text-xs text-[var(--text-primary)] focus:outline-none"
                   />
                 </div>
@@ -202,7 +202,7 @@ export function EditMemberModal({
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
+                    placeholder="Phone Number"
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
                   />
                 </div>
@@ -219,7 +219,7 @@ export function EditMemberModal({
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="rahul@example.com"
+                    placeholder="Email Address"
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
                   />
                 </div>

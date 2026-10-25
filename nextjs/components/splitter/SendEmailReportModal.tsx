@@ -511,7 +511,7 @@ export function SendEmailReportModal({
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Enter recipient email (e.g. friend@example.com)"
+                  placeholder="Email Address"
                   className="flex-1 bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-xs font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
                 />
                 <button
@@ -537,7 +537,7 @@ export function SendEmailReportModal({
               <textarea
                 value={personalNote}
                 onChange={(e) => setPersonalNote(e.target.value)}
-                placeholder="e.g. Hey everyone, here is the verified statement and debt settlement roadmap for our trip!"
+                placeholder="Message / Note"
                 rows={2}
                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl p-2.5 text-xs text-[var(--text-primary)] outline-none focus:border-[#6366F1] resize-none"
               />

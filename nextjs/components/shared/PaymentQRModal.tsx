@@ -14,7 +14,9 @@ import {
   ExternalLink,
   ShieldCheck,
   RefreshCw,
+  Maximize2,
 } from "lucide-react";
+import { QRCodeExpandModal } from "@/components/shared/QRCodeExpandModal";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
 import { decodeQRCodeFromFile, decodeQRCodeFromUrl } from "@/lib/splitter/qrScanner";
@@ -41,6 +43,7 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null
   );
+  const [showExpandModal, setShowExpandModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -255,7 +258,11 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
             {/* QR Code Preview & Container */}
             <div className="mt-4 flex flex-col items-center">
               {previewUrl ? (
-                <div className="relative group p-3.5 bg-white rounded-2xl border border-slate-200 shadow-md">
+                <div
+                  onClick={() => setShowExpandModal(true)}
+                  className="relative group p-3.5 bg-white rounded-2xl border border-slate-200 shadow-md cursor-pointer hover:shadow-lg transition-all"
+                  title="Click to view QR in Expand Mode"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={previewUrl}
@@ -265,7 +272,22 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
                   <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowExpandModal(true);
+                      }}
+                      className="p-2 rounded-xl bg-white text-slate-800 shadow hover:bg-slate-100 flex items-center gap-1 text-xs font-bold"
+                      title="Expand Mode Preview"
+                    >
+                      <Maximize2 size={16} />
+                      <span>Expand</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
                       className="p-2 rounded-xl bg-white text-slate-800 shadow hover:bg-slate-100"
                       title="Replace image"
                     >
@@ -274,7 +296,10 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
                     {currentQr && (
                       <button
                         type="button"
-                        onClick={handleDownload}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload();
+                        }}
                         className="p-2 rounded-xl bg-white text-slate-800 shadow hover:bg-slate-100"
                         title="Download QR"
                       >
@@ -311,6 +336,18 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
 
               {/* QR Action Buttons */}
               <div className="flex items-center gap-2 mt-3 w-full">
+                {previewUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setShowExpandModal(true)}
+                    className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/30 text-xs font-bold text-[#6366F1] hover:bg-[#6366F1]/20 transition-colors"
+                    title="Preview in Expand Mode"
+                  >
+                    <Maximize2 size={14} />
+                    <span>Expand</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -352,7 +389,7 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
               </label>
               <input
                 type="text"
-                placeholder="e.g. name@okhdfcbank or 9876543210@paytm"
+                placeholder="UPI ID"
                 value={upiIdInput}
                 onChange={(e) => setUpiIdInput(e.target.value.trim())}
                 className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -431,6 +468,17 @@ export function PaymentQRModal({ open, onClose }: PaymentQRModalProps) {
           </motion.div>
         </div>
       )}
+
+      <QRCodeExpandModal
+        open={showExpandModal}
+        onClose={() => setShowExpandModal(false)}
+        title="Payment QR Code Preview"
+        subtitle="Enlarged view for quick scanning & settlements"
+        imageUrl={previewUrl}
+        upiId={upiIdInput}
+        userName={user?.name || "Your Account"}
+        downloadFileName={user?.name ? `${user.name.replace(/\s+/g, "_")}_Payment_QR` : "CapFlow_Payment_QR"}
+      />
     </AnimatePresence>
   );
 }

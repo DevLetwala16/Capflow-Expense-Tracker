@@ -227,7 +227,7 @@ function EMIEmailServices({ emi }: { emi: EMI }) {
               type="email"
               value={customEmail}
               onChange={(e) => setCustomEmail(e.target.value)}
-              placeholder="Enter email to receive notifications"
+              placeholder="Email Address"
               className="flex-1 px-3 py-2 rounded-xl text-xs bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
             />
             {customEmail && (

@@ -18,7 +18,9 @@ import {
   AlertCircle,
   Upload,
   Loader2,
+  Maximize2,
 } from "lucide-react";
+import { QRCodeExpandModal } from "@/components/shared/QRCodeExpandModal";
 import { SplitMember, SettlementTransaction } from "@/types/splitter";
 import { formatSplitCurrency } from "@/lib/splitter/debtEngine";
 import { generateQRCodeSVG } from "@/lib/splitter/qrGenerator";
@@ -59,6 +61,7 @@ export function PaymentSettlementQRModal({
   const [scannedResult, setScannedResult] = useState<string | null>(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [markingSettled, setMarkingSettled] = useState(false);
+  const [showExpandPreview, setShowExpandPreview] = useState(false);
 
   // Active receiver UPI ID (auto-extracted from QR image or member profile)
   const [activeUpiId, setActiveUpiId] = useState<string>("");
@@ -413,13 +416,23 @@ export function PaymentSettlementQRModal({
               <div className="mt-4 flex flex-col items-center">
                 {uploadedQrUrl ? (
                   /* User's Uploaded QR from Cloudinary */
-                  <div className="relative p-3 bg-white rounded-2xl border border-slate-200 shadow-md">
+                  <div
+                    onClick={() => setShowExpandPreview(true)}
+                    className="relative group p-3 bg-white rounded-2xl border border-slate-200 shadow-md cursor-pointer hover:shadow-lg transition-all"
+                    title="Click to expand QR preview"
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={uploadedQrUrl}
                       alt={`${receiverName} Payment QR`}
                       className="w-52 h-52 object-contain rounded-xl"
                     />
+                    <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <span className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-lg flex items-center gap-1.5">
+                        <Maximize2 size={14} />
+                        <span>Expand Preview</span>
+                      </span>
+                    </div>
                     <div className="mt-2 text-center">
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
                         <ShieldCheck size={11} className="text-[#10B981]" />
@@ -429,11 +442,21 @@ export function PaymentSettlementQRModal({
                   </div>
                 ) : dynamicQrSvg ? (
                   /* Dynamic Generated UPI QR Code */
-                  <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-md">
+                  <div
+                    onClick={() => setShowExpandPreview(true)}
+                    className="relative group p-3 bg-white rounded-2xl border border-slate-200 shadow-md cursor-pointer hover:shadow-lg transition-all"
+                    title="Click to expand QR preview"
+                  >
                     <div
                       dangerouslySetInnerHTML={{ __html: dynamicQrSvg }}
                       className="w-52 h-52 flex items-center justify-center"
                     />
+                    <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <span className="px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-lg flex items-center gap-1.5">
+                        <Maximize2 size={14} />
+                        <span>Expand Preview</span>
+                      </span>
+                    </div>
                     <div className="mt-2 text-center">
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
                         <Sparkles size={11} className="text-[#6366F1]" />
@@ -456,18 +479,29 @@ export function PaymentSettlementQRModal({
                   </div>
                 )}
 
-                {/* QR Actions: Download & Scan with Camera */}
+                {/* QR Actions: Expand, Download & Scan with Camera */}
                 <div className="flex items-center gap-2 mt-3.5 w-full">
                   {(uploadedQrUrl || dynamicQrSvg) && (
-                    <button
-                      type="button"
-                      onClick={handleDownloadQR}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs font-semibold text-[var(--text-primary)] hover:border-[#10B981] transition-colors"
-                      title="Download QR code to phone"
-                    >
-                      <Download size={14} className="text-[#10B981]" />
-                      <span>Download QR</span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowExpandPreview(true)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/30 text-xs font-bold text-[#6366F1] hover:bg-[#6366F1]/20 transition-colors"
+                        title="Expand QR preview"
+                      >
+                        <Maximize2 size={14} />
+                        <span>Expand</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadQR}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs font-semibold text-[var(--text-primary)] hover:border-[#10B981] transition-colors"
+                        title="Download QR code to phone"
+                      >
+                        <Download size={14} className="text-[#10B981]" />
+                        <span>Download</span>
+                      </button>
+                    </>
                   )}
 
                   <button
@@ -664,6 +698,21 @@ export function PaymentSettlementQRModal({
           </motion.div>
         </div>
       )}
+
+      {/* ── Expand Mode Preview Modal ── */}
+      <QRCodeExpandModal
+        open={showExpandPreview}
+        onClose={() => setShowExpandPreview(false)}
+        title="Payment QR Code Preview"
+        subtitle={`Enlarged view to settle with ${receiverName}`}
+        imageUrl={uploadedQrUrl || undefined}
+        svgHtml={dynamicQrSvg || undefined}
+        amount={amount}
+        currency={currency}
+        userName={receiverName}
+        upiId={activeUpiId}
+        downloadFileName={`Payment_to_${receiverName.replace(/\s+/g, "_")}`}
+      />
     </AnimatePresence>
   );
 }

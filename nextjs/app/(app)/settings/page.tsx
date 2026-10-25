@@ -32,6 +32,7 @@ import {
   AlertCircle,
   Sparkles,
   Info,
+  Maximize2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/notifications/notificationEngine";
 import { DevicePermissionModal } from "@/components/shared/DevicePermissionModal";
 import { PaymentQRModal } from "@/components/shared/PaymentQRModal";
+import { QRCodeExpandModal } from "@/components/shared/QRCodeExpandModal";
 
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 
@@ -245,7 +247,7 @@ const FEATURE_MONTHLY = process.env.NEXT_PUBLIC_FEATURE_MONTHLY_STATEMENT === "t
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { user, logout, updateUser } = useAuthStore();
 
   const {
     // Basic preferences
@@ -268,6 +270,7 @@ export default function SettingsPage() {
     memberId,
     setMemberId,
     paymentQrCode,
+    paymentUpiId,
 
     // App Lock & Sessions
     appLockEnabled,
@@ -328,6 +331,8 @@ export default function SettingsPage() {
   const { emis } = useEMIStore();
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [showPaymentQRModal, setShowPaymentQRModal] = useState(false);
+  const [showQrExpandModal, setShowQrExpandModal] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [testingNotif, setTestingNotif] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
 
@@ -480,9 +485,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (mounted) {
       setTempName(displayName || user?.name || "");
-      setTempPhone(phone || "");
+      setTempPhone(phone || user?.phone || "");
     }
-  }, [mounted, displayName, phone, user?.name]);
+  }, [mounted, displayName, phone, user?.name, user?.phone]);
 
   const { lastUpdated } = useExchangeRateStore();
   const timeAgoMinutes =
@@ -556,11 +561,43 @@ export default function SettingsPage() {
   };
 
   // ── Save Profile Details ───────────────────────────────────────────────────
-  const handleSaveProfile = () => {
-    setDisplayName(tempName.trim());
-    setPhone(tempPhone.trim());
-    setEditingProfile(false);
-    showToast("Profile details saved");
+  const handleSaveProfile = async () => {
+    const trimmedName = tempName.trim();
+    const trimmedPhone = tempPhone.trim();
+
+    setDisplayName(trimmedName);
+    setPhone(trimmedPhone);
+    setSavingProfile(true);
+
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmedName,
+          phone: trimmedPhone,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          updateUser({
+            name: data.user.name,
+            phone: data.user.phone,
+          });
+        }
+        showToast("Profile details updated in MongoDB database");
+      } else {
+        showToast("Profile details saved");
+      }
+    } catch (e) {
+      console.warn("Failed saving profile to DB:", e);
+      showToast("Profile details saved");
+    } finally {
+      setSavingProfile(false);
+      setEditingProfile(false);
+    }
   };
 
   // ── App Lock Toggle Handler ────────────────────────────────────────────────
@@ -777,7 +814,7 @@ export default function SettingsPage() {
                     type="text"
                     value={tempName}
                     onChange={(e) => setTempName(e.target.value)}
-                    placeholder="Enter name"
+                    placeholder="Name"
                     className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:border-[#10B981]"
                   />
                 </div>
@@ -787,7 +824,7 @@ export default function SettingsPage() {
                     type="tel"
                     value={tempPhone}
                     onChange={(e) => setTempPhone(e.target.value)}
-                    placeholder="9104212177"
+                    placeholder="Phone Number"
                     className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:border-[#10B981]"
                   />
                 </div>
@@ -796,6 +833,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setEditingProfile(false)}
+                  disabled={savingProfile}
                   className="px-3 py-1 rounded-xl border border-[var(--border-color)] text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
                 >
                   Cancel
@@ -803,9 +841,10 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={handleSaveProfile}
-                  className="px-3 py-1 rounded-xl bg-[#10B981] text-white text-xs font-semibold hover:bg-[#0ea572]"
+                  disabled={savingProfile}
+                  className="px-3 py-1 rounded-xl bg-[#10B981] text-white text-xs font-semibold hover:bg-[#0ea572] disabled:opacity-50"
                 >
-                  Save Changes
+                  {savingProfile ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </div>
@@ -814,12 +853,20 @@ export default function SettingsPage() {
               <div className="flex items-center gap-1.5">
                 <span className="text-sm text-[var(--text-secondary)]">Phone:</span>
                 <span className="text-sm font-bold text-[var(--text-primary)]">
-                  {phone || "9104212177"}
+                  {phone || user?.phone ? (
+                    phone || user?.phone
+                  ) : (
+                    <span className="text-[var(--text-secondary)] font-normal italic">Not added yet</span>
+                  )}
                 </span>
               </div>
               <button
                 type="button"
-                onClick={() => setEditingProfile(true)}
+                onClick={() => {
+                  setTempName(displayName || user?.name || "");
+                  setTempPhone(phone || user?.phone || "");
+                  setEditingProfile(true);
+                }}
                 className="text-xs font-semibold text-[#10B981] hover:underline cursor-pointer"
               >
                 Edit details
@@ -989,10 +1036,24 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center gap-2">
               {user?.paymentQrCode || paymentQrCode ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#10B981]/10 text-xs font-bold text-[#10B981] border border-[#10B981]/20">
-                  <Check size={12} strokeWidth={2.5} />
-                  Active
-                </span>
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowQrExpandModal(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#6366F1]/10 hover:bg-[#6366F1]/20 text-xs font-bold text-[#6366F1] border border-[#6366F1]/30 transition-colors cursor-pointer"
+                    title="Show QR Code in Expand Mode"
+                  >
+                    <Maximize2 size={12} strokeWidth={2.5} />
+                    <span>Preview QR</span>
+                  </button>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#10B981]/10 text-xs font-bold text-[#10B981] border border-[#10B981]/20">
+                    <Check size={12} strokeWidth={2.5} />
+                    Active
+                  </span>
+                </>
               ) : (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-color)]">
                   Add QR
@@ -1361,6 +1422,18 @@ export default function SettingsPage() {
       <PaymentQRModal
         open={showPaymentQRModal}
         onClose={() => setShowPaymentQRModal(false)}
+      />
+
+      {/* ── QR Code Expand Preview Modal ── */}
+      <QRCodeExpandModal
+        open={showQrExpandModal}
+        onClose={() => setShowQrExpandModal(false)}
+        title="Payment QR Code Preview"
+        subtitle="Enlarged view for quick scanning & settlements"
+        imageUrl={user?.paymentQrCode || paymentQrCode}
+        upiId={user?.upiId || paymentUpiId}
+        userName={displayName || user?.name || "Your Account"}
+        downloadFileName={user?.name ? `${user.name.replace(/\s+/g, "_")}_Payment_QR` : "CapFlow_Payment_QR"}
       />
     </div>
   );

@@ -585,7 +585,7 @@ export function AddSplitExpenseModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Dinner at Fisherman's Wharf, Uber to Airport"
+                    placeholder="Expense Name"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -1044,7 +1044,7 @@ export function AddSplitExpenseModal({
                 </label>
                 <input
                   type="text"
-                  placeholder="Additional context or bill details"
+                  placeholder="Expense Details"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"

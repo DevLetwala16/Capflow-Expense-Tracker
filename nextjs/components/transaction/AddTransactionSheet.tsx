@@ -451,7 +451,7 @@ export function AddTransactionSheet({
                 <div className="mt-3 pt-3 border-t border-[var(--border-color)]">
                   <input
                     type="text"
-                    placeholder="What was this for? (e.g. Lunch, Groceries)"
+                    placeholder="Transaction Name"
                     {...register("title")}
                     onChange={(e) => {
                       register("title").onChange(e);
@@ -593,7 +593,7 @@ export function AddTransactionSheet({
                       </label>
                       <textarea
                         {...register("notes")}
-                        placeholder="Add a remark or note…"
+                        placeholder="Notes / Remarks"
                         rows={2}
                         className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[#6366F1] resize-none"
                       />

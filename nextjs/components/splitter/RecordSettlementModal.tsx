@@ -250,7 +250,7 @@ export function RecordSettlementModal({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Google Pay / Cash / Bank Transfer"
+                    placeholder="Payment Notes / Mode"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"

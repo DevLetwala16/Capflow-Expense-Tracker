@@ -301,7 +301,7 @@ export function CreateSessionModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Goa Trip 2026, Flat 402 Expenses, Family Vacation"
+                    placeholder="Trip Name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -314,7 +314,7 @@ export function CreateSessionModal({
                   </label>
                   <input
                     type="text"
-                    placeholder="Short notes or purpose of this split"
+                    placeholder="Trip Details"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -489,14 +489,14 @@ export function CreateSessionModal({
                     <div className="grid grid-cols-2 gap-2">
                       <input
                         type="text"
-                        placeholder="Member Name *"
+                        placeholder="Name"
                         value={newMemberName}
                         onChange={(e) => setNewMemberName(e.target.value)}
                         className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
                       />
                       <input
                         type="text"
-                        placeholder="Phone (optional)"
+                        placeholder="Phone Number"
                         value={newMemberPhone}
                         onChange={(e) => setNewMemberPhone(e.target.value)}
                         className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -504,7 +504,7 @@ export function CreateSessionModal({
                     </div>
                     <input
                       type="email"
-                      placeholder="Email for PDF statements (optional)"
+                      placeholder="Email Address"
                       value={newMemberEmail}
                       onChange={(e) => setNewMemberEmail(e.target.value)}
                       className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[#6366F1]"

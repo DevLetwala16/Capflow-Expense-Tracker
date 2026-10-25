@@ -473,7 +473,7 @@ export function TransactionStatementSheet({
                   type="email"
                   value={recipientEmail}
                   onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder="name@example.com"
+                  placeholder="Email Address"
                   className="flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
                 />
               </div>

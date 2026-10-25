@@ -306,7 +306,7 @@ export default function OTPAuthPage() {
                       <input
                         type="email"
                         name="email"
-                        placeholder="name@example.com"
+                        placeholder="Email Address"
                         value={email}
                         onChange={(e) => {
                           setEmail(e.target.value);

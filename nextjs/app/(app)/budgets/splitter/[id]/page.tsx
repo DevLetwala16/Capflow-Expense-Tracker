@@ -91,6 +91,7 @@ export default function SplitterSessionDashboard() {
     recordSettlement,
     toggleSettleExpenseShare,
     deleteSettlement,
+    deleteAllSettlements,
     updateSession,
     deleteSession,
     startRealtimeSync,
@@ -108,6 +109,16 @@ export default function SplitterSessionDashboard() {
   const [suggestedSettlement, setSuggestedSettlement] = useState<SettlementTransaction | null>(null);
   const [showQrPaymentModal, setShowQrPaymentModal] = useState(false);
   const [qrPaymentTransaction, setQrPaymentTransaction] = useState<SettlementTransaction | null>(null);
+
+  // Settlement Delete confirmation states
+  const [settlementToDelete, setSettlementToDelete] = useState<{
+    id: string;
+    fromName: string;
+    toName: string;
+    amount: number;
+  } | null>(null);
+  const [showDeleteAllSettlementsModal, setShowDeleteAllSettlementsModal] = useState(false);
+  const [deletingSettlement, setDeletingSettlement] = useState(false);
 
   // Expanded itemized view state for Expenses tab & Roadmap tab
   const [expandedExpenseIds, setExpandedExpenseIds] = useState<Set<string>>(new Set());
@@ -1309,12 +1320,18 @@ export default function SplitterSessionDashboard() {
 
                                 <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
                                   <button
+                                    disabled={!isPayerUser}
                                     onClick={() => {
+                                      if (!isPayerUser) return;
                                       setQrPaymentTransaction(st);
                                       setShowQrPaymentModal(true);
                                     }}
-                                    className="px-2.5 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1]/20 border border-[#6366F1]/30 text-[#6366F1] text-xs font-bold active:scale-95 transition-all flex items-center gap-1 flex-shrink-0"
-                                    title="View Receiver QR code and launch payment apps"
+                                    className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1 flex-shrink-0 ${
+                                      isPayerUser
+                                        ? "bg-[#6366F1]/10 hover:bg-[#6366F1]/20 border-[#6366F1]/30 text-[#6366F1] active:scale-95 cursor-pointer"
+                                        : "bg-[var(--bg-primary)]/40 border-[var(--border-color)]/50 text-[var(--text-secondary)]/40 opacity-40 cursor-not-allowed pointer-events-none"
+                                    }`}
+                                    title={isPayerUser ? "View Receiver QR code and launch payment apps" : "QR Pay disabled — Payer action only"}
                                   >
                                     <QrCode size={13} strokeWidth={2.5} />
                                     <span>QR Pay</span>
@@ -1463,6 +1480,18 @@ export default function SplitterSessionDashboard() {
                     Records of who paid whom on which date with exact amounts.
                   </p>
                 </div>
+
+                {activeSession.settlements && activeSession.settlements.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteAllSettlementsModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EF4444]/10 hover:bg-[#EF4444]/20 border border-[#EF4444]/25 text-[#EF4444] text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
+                    title="Delete all settlement history"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete All</span>
+                  </button>
+                )}
               </div>
 
               {settlementHistoryList.length === 0 ? (
@@ -1496,18 +1525,22 @@ export default function SplitterSessionDashboard() {
                         <span className="text-sm font-extrabold text-[#10B981]">
                           {formatSplitCurrency(item.amount, activeSession.currency)} ✓
                         </span>
-                        {item.canUndo && (
+                        {item.settlementId && (
                           <button
                             type="button"
-                            onClick={async () => {
-                              if (confirm("Are you sure you want to undo this settlement payment?")) {
-                                await deleteSettlement(activeSession.sessionId, item.settlementId);
-                              }
+                            onClick={() => {
+                              setSettlementToDelete({
+                                id: item.settlementId,
+                                fromName: item.fromName,
+                                toName: item.toName,
+                                amount: item.amount,
+                              });
                             }}
-                            className="px-2 py-1 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] text-[10px] font-bold transition-colors"
-                            title="Undo payment"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[#EF4444] hover:border-[#EF4444]/30 hover:bg-[#EF4444]/10 text-[11px] font-bold transition-colors cursor-pointer"
+                            title="Delete settlement record"
                           >
-                            Undo
+                            <Trash2 size={12} />
+                            <span>Delete</span>
                           </button>
                         )}
                       </div>
@@ -1865,6 +1898,158 @@ export default function SplitterSessionDashboard() {
               >
                 <X size={18} />
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Confirm Delete Single Settlement Modal ── */}
+      <AnimatePresence>
+        {settlementToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => !deletingSettlement && setSettlementToDelete(null)}
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-[400px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-5 sm:p-6 shadow-2xl z-10"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-[#EF4444]/10 text-[#EF4444] flex items-center justify-center flex-shrink-0">
+                  <Trash2 size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[var(--text-primary)]">
+                    Delete Settlement Record?
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    This will remove the payment and re-open the debt
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[var(--bg-primary)] rounded-2xl border border-[var(--border-color)] text-xs text-[var(--text-secondary)] space-y-1 mb-4">
+                <p>
+                  Settlement amount:{" "}
+                  <strong className="text-[var(--text-primary)]">
+                    {formatSplitCurrency(settlementToDelete.amount, activeSession.currency)}
+                  </strong>
+                </p>
+                <p>
+                  From: <strong className="text-[#EF4444]">{settlementToDelete.fromName}</strong> · To:{" "}
+                  <strong className="text-[#10B981]">{settlementToDelete.toName}</strong>
+                </p>
+              </div>
+
+              <p className="text-xs text-[var(--text-secondary)] mb-5">
+                Are you sure you want to delete this recorded payment? The settlement will be deleted permanently.
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={deletingSettlement}
+                  onClick={() => setSettlementToDelete(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingSettlement}
+                  onClick={async () => {
+                    setDeletingSettlement(true);
+                    try {
+                      await deleteSettlement(activeSession.sessionId, settlementToDelete.id);
+                      setSettlementToDelete(null);
+                    } catch (e) {
+                      console.error("Failed deleting settlement:", e);
+                    } finally {
+                      setDeletingSettlement(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#EF4444] text-white text-xs font-bold hover:bg-[#DC2626] transition-all shadow-md shadow-[#EF4444]/20 disabled:opacity-50"
+                >
+                  {deletingSettlement ? "Deleting..." : "Delete Record"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Confirm Delete All Settlements Modal ── */}
+      <AnimatePresence>
+        {showDeleteAllSettlementsModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => !deletingSettlement && setShowDeleteAllSettlementsModal(false)}
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-[400px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-5 sm:p-6 shadow-2xl z-10"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl bg-[#EF4444]/10 text-[#EF4444] flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[var(--text-primary)]">
+                    Delete All Settlements?
+                  </h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Clear all recorded payments in this group
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-2xl text-xs text-[#EF4444] mb-4">
+                Warning: This will permanently delete <strong>{activeSession.settlements?.length || 0}</strong> settlement record(s). All shared expense splits will be marked as unsettled and debts will be re-opened in the settlement roadmap.
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={deletingSettlement}
+                  onClick={() => setShowDeleteAllSettlementsModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingSettlement}
+                  onClick={async () => {
+                    setDeletingSettlement(true);
+                    try {
+                      await deleteAllSettlements(activeSession.sessionId, {
+                        memberId: currentMember?.id || "user",
+                        name: currentMember?.name || user?.name || "Member",
+                      });
+                      setShowDeleteAllSettlementsModal(false);
+                    } catch (e) {
+                      console.error("Failed deleting all settlements:", e);
+                    } finally {
+                      setDeletingSettlement(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#EF4444] text-white text-xs font-bold hover:bg-[#DC2626] transition-all shadow-md shadow-[#EF4444]/20 disabled:opacity-50"
+                >
+                  {deletingSettlement ? "Deleting All..." : "Delete All Records"}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

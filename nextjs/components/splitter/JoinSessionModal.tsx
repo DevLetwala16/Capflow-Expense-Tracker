@@ -770,7 +770,7 @@ export function JoinSessionModal({
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Alex, Maya, Mom"
+                      placeholder="Name"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -783,7 +783,7 @@ export function JoinSessionModal({
                     </label>
                     <input
                       type="text"
-                      placeholder="+91 98765 43210"
+                      placeholder="Phone Number"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -836,7 +836,7 @@ export function JoinSessionModal({
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Rahul, Alex, Mom"
+                    placeholder="Name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
@@ -849,7 +849,7 @@ export function JoinSessionModal({
                   </label>
                   <input
                     type="text"
-                    placeholder="+91 98765 43210"
+                    placeholder="Phone Number"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-[#6366F1]"

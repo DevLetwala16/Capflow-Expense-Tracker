@@ -128,7 +128,7 @@ export function AddGoalSheet({ open, onClose }: AddGoalSheetProps) {
                 <label className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Goal Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Emergency Fund"
+                  placeholder="Goal Name"
                   {...register("name")}
                   className="mt-1 w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-3 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[#6366F1]"
                 />

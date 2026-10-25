@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
         id: user._id.toString(),
         email: user.email,
         name: user.name,
+        phone: user.phone || "",
         avatar: user.avatar,
       },
     });

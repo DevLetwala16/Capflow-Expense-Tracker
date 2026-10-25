@@ -174,7 +174,7 @@ export function EditSessionModal({
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Goa Trip 2026, Flat 402 Rent"
+                  placeholder="Trip Name"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1]"
                 />
               </div>
@@ -188,7 +188,7 @@ export function EditSessionModal({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
-                  placeholder="Brief context or destination details"
+                  placeholder="Trip Details"
                   className="w-full px-3.5 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[#6366F1] resize-none"
                 />
               </div>
