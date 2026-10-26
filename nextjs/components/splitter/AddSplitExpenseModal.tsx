@@ -15,7 +15,9 @@ import {
   Calendar,
   Tag,
   Image as ImageIcon,
+  Calculator,
 } from "lucide-react";
+import { FloatingCalculator } from "./FloatingCalculator";
 import {
   SplitMember,
   SplitExpenseItem,
@@ -99,6 +101,7 @@ export function AddSplitExpenseModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [showCalculator, setShowCalculator] = useState(false);
 
   // Active weights for splitting: returns undefined (1 share each) if considerFamilyMembers is false
   const activeWeights = useMemo(() => {
@@ -185,6 +188,7 @@ export function AddSplitExpenseModal({
         setExactShares({});
         setCustomizedMemberIds(new Set());
       }
+      setShowCalculator(false);
     } else {
       // Reset
       setTitle("");
@@ -323,6 +327,7 @@ export function AddSplitExpenseModal({
         setExactShares(computeEqualSharesMap(parsedTotal, selectedParticipants, targetWeights));
         setCustomizedMemberIds(new Set());
       }
+      setShowCalculator(false);
     } else {
       setConsiderFamilyMembers(false);
       if (parsedTotal > 0) {
@@ -532,7 +537,8 @@ export function AddSplitExpenseModal({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4">
+        <>
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -592,19 +598,40 @@ export function AddSplitExpenseModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1">
-                    Total Amount ({currency}) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => handleAmountChange(e.target.value)}
-                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl px-3 py-2.5 text-sm font-extrabold text-[#10B981] outline-none focus:border-[#6366F1] text-right"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-[var(--text-secondary)]">
+                      Total Amount ({currency}) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowCalculator(true)}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#6366F1] hover:text-[#4F46E5] bg-[#6366F1]/10 hover:bg-[#6366F1]/20 px-2 py-0.5 rounded-lg transition-colors cursor-pointer"
+                      title="Open Floating Calculator"
+                    >
+                      <Calculator size={12} />
+                      <span>Calc</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="0.00"
+                      value={amount}
+                      onChange={(e) => handleAmountChange(e.target.value)}
+                      className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl pl-3 pr-9 py-2.5 text-sm font-extrabold text-[#10B981] outline-none focus:border-[#6366F1] text-right"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCalculator(true)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[var(--text-secondary)] hover:text-[#6366F1] rounded-lg transition-colors cursor-pointer"
+                      title="Open Calculator"
+                    >
+                      <Calculator size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1074,8 +1101,37 @@ export function AddSplitExpenseModal({
               </div>
             </form>
           </motion.div>
+
+          {/* Floating Calculator Trigger Button (Visible when modal is open and calc is closed) */}
+          {!showCalculator && (
+            <motion.button
+              type="button"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowCalculator(true)}
+              className="fixed bottom-5 right-5 z-[125] flex items-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white shadow-xl shadow-[#6366F1]/40 hover:shadow-2xl hover:shadow-[#6366F1]/60 border border-white/20 transition-all font-bold text-xs cursor-pointer select-none"
+              title="Open Floating Calculator"
+            >
+              <Calculator size={16} />
+              <span>Calculator</span>
+            </motion.button>
+          )}
         </div>
-      )}
-    </AnimatePresence>
-  );
+
+        {/* Floating / Full-screen Calculator */}
+        <FloatingCalculator
+          open={showCalculator}
+          onClose={() => setShowCalculator(false)}
+          initialValue={amount}
+          currency={currency}
+          onApply={(val) => {
+            handleAmountChange(val.toString());
+          }}
+        />
+      </>
+    )}
+  </AnimatePresence>
+);
 }
