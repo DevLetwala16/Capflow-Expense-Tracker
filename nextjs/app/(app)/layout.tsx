@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BarChart2, CalendarDays, Target, CreditCard, Settings, ReceiptText } from "lucide-react";
+import { Home, Users2, CalendarDays, Target, CreditCard, Settings, ReceiptText } from "lucide-react";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useBudgetStore } from "@/lib/store/budgetStore";
@@ -44,13 +44,13 @@ import { useEMIStore } from "@/lib/store/emiStore";
 import { useExchangeRateStore } from "@/lib/currency/exchangeRates";
 
 const NAV_ITEMS = [
-  { href: "/dashboard",    icon: Home,         label: "Home" },
-  { href: "/transactions", icon: ReceiptText,  label: "History" },
-  { href: "/analytics",    icon: BarChart2,    label: "Analytics" },
-  { href: "/calendar",     icon: CalendarDays, label: "Calendar" },
-  { href: "/budgets",      icon: Target,       label: "Budgets" },
-  { href: "/emis",         icon: CreditCard,   label: "EMIs" },
-  { href: "/settings",     icon: Settings,     label: "Settings" },
+  { href: "/dashboard",        icon: Home,         label: "Home" },
+  { href: "/transactions",     icon: ReceiptText,  label: "History" },
+  { href: "/calendar",         icon: CalendarDays, label: "Calendar" },
+  { href: "/budgets/splitter", icon: Users2,       label: "Splitter" },
+  { href: "/budgets",          icon: Target,       label: "Budgets" },
+  { href: "/emis",             icon: CreditCard,   label: "EMIs" },
+  { href: "/settings",         icon: Settings,     label: "Settings" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -201,7 +201,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0)" }}
       >
         {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || pathname.startsWith(href + "/");
+          const active = href === "/budgets" ? pathname === "/budgets" : pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}

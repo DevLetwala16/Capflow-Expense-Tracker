@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Search, Plus, FileText, SlidersHorizontal, X } from "lucide-react";
+import { ArrowLeft, Search, Plus, FileText, SlidersHorizontal, X, BarChart2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { format, parseISO, isAfter, isBefore, startOfDay } from "date-fns";
@@ -381,18 +381,29 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* FAB */}
-      <motion.button
-        whileTap={{ scale: 0.92 }}
-        onClick={() => {
-          setEditingTx(null);
-          setShowAddSheet(true);
-        }}
-        className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 z-50"
-        aria-label="Add transaction"
-      >
-        <Plus size={24} className="text-white" strokeWidth={2.5} />
-      </motion.button>
+      {/* FAB & Floating Analytics Button */}
+      <div className="fixed bottom-[calc(var(--bottom-nav-h)+12px)] md:bottom-8 right-4 md:right-8 flex flex-col items-center gap-3 z-50">
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => router.push("/analytics")}
+          className="w-12 h-12 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[#6366F1] shadow-xl shadow-black/20 flex items-center justify-center hover:bg-[#6366F1]/10 hover:border-[#6366F1]/40 transition-colors backdrop-blur-md cursor-pointer"
+          aria-label="Analytics"
+          title="Analytics"
+        >
+          <BarChart2 size={20} strokeWidth={2.2} />
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => {
+            setEditingTx(null);
+            setShowAddSheet(true);
+          }}
+          className="w-14 h-14 rounded-full bg-gradient-to-br from-[#6366F1] to-[#38bdf8] flex items-center justify-center shadow-xl shadow-indigo-500/30 cursor-pointer"
+          aria-label="Add transaction"
+        >
+          <Plus size={24} className="text-white" strokeWidth={2.5} />
+        </motion.button>
+      </div>
 
       {/* Transaction Detail Sheet (Read-Only Info View) */}
       <TransactionDetailSheet

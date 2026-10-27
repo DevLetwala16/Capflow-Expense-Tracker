@@ -1017,51 +1017,65 @@ export default function SettingsPage() {
           </div>
 
           {/* Payment QR Code */}
-          <button
+          <div
             onClick={() => setShowPaymentQRModal(true)}
             className="w-full flex items-center justify-between px-4 py-3.5 border-t border-[var(--border-color)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer text-left"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setShowPaymentQRModal(true);
+              }
+            }}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-[#6366F1]/10 flex items-center justify-center">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#6366F1]/10 flex items-center justify-center flex-shrink-0">
                 <QrCode size={15} className="text-[#6366F1]" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-[var(--text-primary)]">Payment QR Code</p>
-                <p className="text-xs text-[var(--text-secondary)]">
+                <p className="text-xs text-[var(--text-secondary)] truncate">
                   {user?.paymentQrCode || paymentQrCode
                     ? "QR code active • Ready for Splitter settlements"
                     : "Add your UPI / payment QR for receiving payments"}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5 flex-shrink-0">
               {user?.paymentQrCode || paymentQrCode ? (
                 <>
-                  <button
-                    type="button"
+                  <div
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowQrExpandModal(true);
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#6366F1]/10 hover:bg-[#6366F1]/20 text-xs font-bold text-[#6366F1] border border-[#6366F1]/30 transition-colors cursor-pointer"
-                    title="Show QR Code in Expand Mode"
+                    title="Click to preview QR code"
+                    className="relative w-8 h-8 rounded-lg bg-white p-0.5 border border-[var(--border-color)] shadow-xs hover:ring-2 hover:ring-[#6366F1] transition-all flex items-center justify-center overflow-hidden cursor-pointer group flex-shrink-0"
                   >
-                    <Maximize2 size={12} strokeWidth={2.5} />
-                    <span>Preview QR</span>
-                  </button>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#10B981]/10 text-xs font-bold text-[#10B981] border border-[#10B981]/20">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={user?.paymentQrCode || paymentQrCode}
+                      alt="Payment QR"
+                      className="w-full h-full object-contain"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Maximize2 size={11} className="text-white" />
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#10B981]/10 text-xs font-semibold text-[#10B981] border border-[#10B981]/20">
                     <Check size={12} strokeWidth={2.5} />
                     Active
                   </span>
                 </>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-color)]">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--bg-primary)] text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-color)]">
                   Add QR
                 </span>
               )}
               <ChevronRight size={15} className="text-[var(--text-secondary)]" />
             </div>
-          </button>
+          </div>
           {/* Fiscal Year Configuration */}
           <div className="flex items-center justify-between px-4 py-3.5 border-t border-[var(--border-color)]">
             <div className="flex items-center gap-3">

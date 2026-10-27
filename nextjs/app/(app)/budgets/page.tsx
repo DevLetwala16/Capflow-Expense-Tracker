@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Target, TrendingUp, Users2, ArrowRight } from "lucide-react";
+import { Plus, Trash2, Target, TrendingUp } from "lucide-react";
 import { useBudgetStore } from "@/lib/store/budgetStore";
 import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
@@ -14,9 +13,6 @@ import { BudgetDrilldownSheet } from "@/components/budgets/BudgetDrilldownSheet"
 import { DynamicIcon } from "@/components/transaction/DynamicIcon";
 import { AnimatedProgressRing } from "@/components/shared/AnimatedProgressRing";
 import { ModuleLoader } from "@/components/shared/ModuleLoader";
-import { SplitterCard } from "@/components/splitter/SplitterCard";
-import { useSplitterStore } from "@/lib/store/splitterStore";
-import { useAuthStore } from "@/lib/store/authStore";
 import { format, parseISO } from "date-fns";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -116,16 +112,6 @@ export default function BudgetsPage() {
     return { ...b, spent };
   });
 
-  const { user } = useAuthStore();
-  const { sessions, loading: splitterLoading, loadSessions } = useSplitterStore();
-
-  useEffect(() => {
-    if (user?.id) {
-      loadSessions(user.id);
-    } else if (typeof window !== "undefined" && !localStorage.getItem("capflow_auth")) {
-      loadSessions("guest_user");
-    }
-  }, [user?.id, loadSessions]);
 
   const addFundsGoal = goals.find((g) => g.id === addFundsGoalId);
 
@@ -146,35 +132,6 @@ export default function BudgetsPage() {
         />
       ) : (
         <div className="px-4 pb-8 pt-4 md:py-6 space-y-6">
-          {/* ── Splitter / Group Expenses Section ── */}
-          <section>
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-2">
-                <Users2 size={16} className="text-[#6366F1]" />
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Splitter & Group Expenses
-                </h2>
-                {sessions.length > 0 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#6366F1]/10 text-[#6366F1]">
-                    {sessions.length}
-                  </span>
-                )}
-              </div>
-              <Link
-                href="/budgets/splitter"
-                className="flex items-center gap-1 text-xs font-semibold text-[#6366F1] hover:underline"
-              >
-                <span>View All</span>
-                <ArrowRight size={13} />
-              </Link>
-            </div>
-            <SplitterCard
-              sessions={sessions}
-              currencySymbol={symbol}
-              loading={splitterLoading && sessions.length === 0}
-            />
-          </section>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
             {/* ── Budgets Section (Exact same cards, buttons, and fonts) ── */}
             <section>
