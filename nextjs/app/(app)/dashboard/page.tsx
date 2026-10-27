@@ -18,6 +18,7 @@ import { useTransactionStore } from "@/lib/store/transactionStore";
 import { useSettingsStore } from "@/lib/store/settingsStore";
 import { useCategoryStore } from "@/lib/store/categoryStore";
 import { BalanceCard } from "@/components/shared/BalanceCard";
+import { SafeToSpendCard } from "@/components/shared/SafeToSpendCard";
 import { WeeklyBarChart } from "@/components/shared/WeeklyBarChart";
 import { TransactionRow } from "@/components/transaction/TransactionRow";
 import { AddTransactionSheet } from "@/components/transaction/AddTransactionSheet";
@@ -164,6 +165,14 @@ export default function DashboardPage() {
                 currency={defaultCurrency}
                 loading={loading}
                 prevMonthExpense={prevMonthExpense}
+              />
+            </div>
+
+            {/* Safe-to-Spend Dynamic Burn Rate Gauge */}
+            <div id="tour-safe-to-spend">
+              <SafeToSpendCard
+                selectedMonth={selectedMonth}
+                currency={defaultCurrency}
               />
             </div>
 

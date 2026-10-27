@@ -84,6 +84,8 @@ interface SettingsState {
   fiscalStartMonth: number;
   /** Number-formatting system used for large amounts */
   numberingSystem: NumberingSystem;
+  /** Overall monthly spending target (0 = auto-calculate from category budgets or income) */
+  monthlySpendingBudget: number;
 
   // ── Notifications ──────────────────────────────────────────────────────────
   emailAlertsEnabled: boolean;
@@ -134,6 +136,7 @@ interface SettingsState {
   setDefaultPaymentMethod: (val: string) => void;
   setFiscalStartMonth: (val: number) => void;
   setNumberingSystem: (val: NumberingSystem) => void;
+  setMonthlySpendingBudget: (val: number) => void;
   setEmailAlertsEnabled: (val: boolean) => void;
   setPushNotificationsEnabled: (val: boolean) => void;
   setDailyReminderTime: (val: string) => void;
@@ -232,6 +235,7 @@ const DEFAULTS = {
   defaultPaymentMethod: 'Cash',
   fiscalStartMonth: 1,
   numberingSystem: 'western' as NumberingSystem,
+  monthlySpendingBudget: 0,
 
   // notifications
   emailAlertsEnabled: false,
@@ -307,6 +311,7 @@ export const useSettingsStore = create<SettingsState>()(
       setDefaultPaymentMethod: (val) => set({ defaultPaymentMethod: val }),
       setFiscalStartMonth: (val) => set({ fiscalStartMonth: val }),
       setNumberingSystem: (val) => set({ numberingSystem: val }),
+      setMonthlySpendingBudget: (val) => set({ monthlySpendingBudget: val }),
       setEmailAlertsEnabled: (val) => set({ emailAlertsEnabled: val }),
       setPushNotificationsEnabled: (val) => set({ pushNotificationsEnabled: val }),
       setDailyReminderTime: (val) => set({ dailyReminderTime: val }),
@@ -397,6 +402,7 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         defaultPaymentMethod: s.defaultPaymentMethod ?? DEFAULTS.defaultPaymentMethod,
         fiscalStartMonth: s.fiscalStartMonth ?? DEFAULTS.fiscalStartMonth,
         numberingSystem: (s.numberingSystem as NumberingSystem) ?? DEFAULTS.numberingSystem,
+        monthlySpendingBudget: s.monthlySpendingBudget ?? DEFAULTS.monthlySpendingBudget,
 
         // notifications
         emailAlertsEnabled: s.emailAlertsEnabled ?? DEFAULTS.emailAlertsEnabled,
@@ -464,6 +470,7 @@ export function rehydrateSettings(userId: string | null | undefined): void {
         defaultPaymentMethod: state.defaultPaymentMethod,
         fiscalStartMonth: state.fiscalStartMonth,
         numberingSystem: state.numberingSystem,
+        monthlySpendingBudget: state.monthlySpendingBudget,
 
         // notifications
         emailAlertsEnabled: state.emailAlertsEnabled,

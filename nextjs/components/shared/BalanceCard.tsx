@@ -5,11 +5,11 @@ import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Layers, Eye, EyeOff } from "lucide-react";
 import { useSettingsStore, NumberingSystem } from "@/lib/store/settingsStore";
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
+export const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: "₹", USD: "$", EUR: "€", GBP: "£", JPY: "¥",
 };
 
-function formatAmount(
+export function formatAmount(
   amount: number = 0,
   currency: string = "INR",
   isMasked: boolean = false,
