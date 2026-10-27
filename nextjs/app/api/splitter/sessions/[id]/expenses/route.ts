@@ -138,12 +138,36 @@ export async function POST(
     if (isEdit) {
       const existingIdx = session.expenses.findIndex((e) => e.id === resolvedExpenseId);
       if (existingIdx >= 0) {
-        newExpense.createdAt = session.expenses[existingIdx].createdAt;
+        const oldExpense = session.expenses[existingIdx];
+        // Bug 5 Fix: Preserve settled status where amount unchanged; reset where amount changed.
+        // An edited split amount invalidates any prior settlement for that split.
+        newExpense.splits = newExpense.splits.map((split) => {
+          const oldSplit = oldExpense.splits.find((s: any) => s.memberId === split.memberId);
+          if (!oldSplit) return split; // new participant — no prior settlement to worry about
+          if (Math.abs(oldSplit.amount - split.amount) > 0.009) {
+            // Amount changed → old settlement is no longer valid for this split
+            return { memberId: split.memberId, amount: split.amount, settled: false, settledAt: undefined, settlementId: undefined };
+          }
+          // Amount unchanged → carry forward existing settled state exactly
+          return { ...split, settled: oldSplit.settled ?? split.settled, settledAt: oldSplit.settledAt, settlementId: oldSplit.settlementId };
+        });
+        newExpense.createdAt = oldExpense.createdAt;
         session.expenses[existingIdx] = newExpense;
       } else {
         session.expenses.unshift(newExpense);
       }
     } else {
+      // Bug 1 Fix: Idempotency guard — if the same expense ID already exists (offline retry),
+      // return it as-is instead of inserting a duplicate that would double all balances.
+      const alreadyExists = session.expenses.some((e: any) => e.id === resolvedExpenseId);
+      if (alreadyExists) {
+        return NextResponse.json({
+          success: true,
+          expense: session.expenses.find((e: any) => e.id === resolvedExpenseId),
+          session,
+          auditLog: null,
+        });
+      }
       session.expenses.unshift(newExpense);
     }
 

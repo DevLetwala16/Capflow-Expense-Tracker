@@ -56,7 +56,19 @@ export async function POST(
 
     const parsedAmount = roundTo2Decimals(Number(amount));
     const now = new Date().toISOString();
-    const settlementId = `stl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const settlementId = body.id || `stl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // Idempotency guard: if this settlement was already recorded (e.g. offline sync retry),
+    // return existing record instead of creating a duplicate payment that throws off balances.
+    const alreadyExists = session.settlements.find((s: any) => s.id === settlementId);
+    if (alreadyExists) {
+      return NextResponse.json({
+        success: true,
+        settlement: alreadyExists,
+        session,
+        auditLog: null,
+      });
+    }
 
     const newSettlement: SplitSettlement = {
       id: settlementId,
@@ -96,7 +108,10 @@ export async function POST(
         const toPaid = exp.paidBy?.some((p: any) => p.memberId === toMemberId);
         if (toPaid) {
           const split = exp.splits?.find((s: any) => s.memberId === fromMemberId && !s.settled);
-          if (split && split.amount <= remainingToSettle + 0.01) {
+          // Bug 2 Fix: Removed +0.01 tolerance — only mark a split settled when the
+          // remaining balance fully covers it. The tolerance caused splits to be
+          // marked settled even when the debtor still owed a penny or more.
+          if (split && split.amount <= remainingToSettle) {
             split.settled = true;
             split.settledAt = now;
             split.settlementId = settlementId;
@@ -213,7 +228,13 @@ export async function DELETE(
       if (settlementId) {
         session.settlements = session.settlements.filter((s: any) => s.id !== settlementId);
       } else if (expenseId) {
-        session.settlements = session.settlements.filter((s: any) => s.expenseId !== expenseId);
+        if (memberId) {
+          session.settlements = session.settlements.filter(
+            (s: any) => !(s.expenseId === expenseId && s.fromMemberId === memberId)
+          );
+        } else {
+          session.settlements = session.settlements.filter((s: any) => s.expenseId !== expenseId);
+        }
       }
 
       // 2. Unsettle expense split if expenseId given

@@ -7,12 +7,14 @@ import {
   SplitMember,
   SplitAuditLog,
 } from '@/types/splitter';
-import { generateSessionId, roundTo2Decimals, formatSplitCurrency } from '@/lib/splitter/debtEngine';
+import { generateSessionId, roundTo2Decimals, formatSplitCurrency, toCents, fromCents } from '@/lib/splitter/debtEngine';
 import { useAuthStore } from '@/lib/store/authStore';
 import {
   syncExpenseToCapFlowTransactions,
   syncSettlementToCapFlowTransactions,
   removeSyncedExpenseTransaction,
+  removeSyncedSettlementTransaction,
+  removeAllSyncedSettlementsForSession,
 } from '@/lib/splitter/splitterTransactionSync';
 
 interface LiveToast {
@@ -447,6 +449,25 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       updatedAt: now,
     };
 
+    // Bug 5 Fix (store side): When editing, reset the settled flag for any split
+    // whose amount changed. The old settlement record no longer matches the new amount,
+    // so keeping settled=true would create a "Settled ✓" badge with a wrong figure.
+    if (isEdit) {
+      const existingExpense = activeSession.expenses.find((e) => e.id === resolvedExpenseId);
+      if (existingExpense) {
+        newExpense.splits = newExpense.splits.map((split) => {
+          const oldSplit = existingExpense.splits.find((s) => s.memberId === split.memberId);
+          if (!oldSplit) return { memberId: split.memberId, amount: split.amount, settled: false };
+          if (Math.abs((oldSplit.amount || 0) - split.amount) > 0.009) {
+            // Amount changed → must re-settle
+            return { memberId: split.memberId, amount: split.amount, settled: false, settledAt: undefined, settlementId: undefined };
+          }
+          // Amount unchanged → preserve existing settled state
+          return { ...split, settled: oldSplit.settled ?? split.settled, settledAt: oldSplit.settledAt, settlementId: oldSplit.settlementId };
+        });
+      }
+    }
+
     const auditAction = isEdit
       ? `Updated expense "${newExpense.title}" for ${formatSplitCurrency(
           newExpense.amount,
@@ -695,7 +716,9 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
         const toPaid = exp.paidBy?.some((p) => p.memberId === data.toMemberId && p.amount > 0);
         if (toPaid) {
           const split = exp.splits.find((s) => s.memberId === data.fromMemberId && !s.settled);
-          if (split && split.amount <= remaining + 0.01) {
+          // Bug 2 Fix: Removed +0.01 tolerance — only mark a split settled when
+          // remaining balance fully covers it (prevents phantom settlements).
+          if (split && split.amount <= remaining) {
             split.settled = true;
             split.settledAt = now;
             split.settlementId = settlementId;
@@ -907,6 +930,14 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
           }
         }
       }
+
+      // Sync removal of settlement to CapFlow transactions & update cumulative balance
+      const authUser = useAuthStore.getState().user;
+      if (authUser?.id) {
+        removeSyncedSettlementTransaction(sessionId, settlementId, authUser.id).catch((err) =>
+          console.warn('[Splitter] Settlement delete sync warning:', err)
+        );
+      }
     } catch (err) {
       console.error('[Splitter] Delete settlement rollback:', err);
       set({ activeSession: rollbackSession });
@@ -988,6 +1019,14 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
           }
         }
       }
+
+      // Sync removal of all settlements to CapFlow transactions & update cumulative balance
+      const authUser = useAuthStore.getState().user;
+      if (authUser?.id) {
+        removeAllSyncedSettlementsForSession(sessionId, authUser.id).catch((err) =>
+          console.warn('[Splitter] Purge settlements sync warning:', err)
+        );
+      }
     } catch (err) {
       console.error('[Splitter] Delete all settlements rollback:', err);
       set({ activeSession: rollbackSession });
@@ -1030,32 +1069,70 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
     let updatedAuditLogs = [...session.auditLogs];
 
     if (willBeSettled) {
-      const settlementId = `stl_exp_${expense.id}_${memberId}_${Date.now()}`;
+      // Bug 4 Fix: Proportional settlement for each payer in multi-payer expenses
+      const groupSettlementId = `stl_exp_${expense.id}_${memberId}_${Date.now()}`;
       split.settled = true;
       split.settledAt = now;
-      split.settlementId = settlementId;
+      split.settlementId = groupSettlementId;
 
       const authUser = useAuthStore.getState().user;
       const currentMember =
         session.members.find((m) => m.userId === authUser?.id) || session.members[0];
 
-      const settlement: SplitSettlement = {
-        id: settlementId,
-        sessionId: session.sessionId,
-        fromMemberId: effectiveDebtorId,
-        toMemberId: creditorId,
-        amount: split.amount,
-        date: now,
-        notes: `Itemized expense: ${expense.title}`,
-        expenseId: expense.id,
-        recordedBy: {
-          memberId: currentMember?.id || 'member',
-          name: currentMember?.name || 'Member',
-        },
-        createdAt: now,
-      };
+      const totalExpenseCents = toCents(expense.amount);
+      const dShareCents = toCents(split.amount);
+      const activePayers = (expense.paidBy || []).filter(
+        (p) => p.amount > 0 && p.memberId !== effectiveDebtorId
+      );
 
-      updatedSettlements.unshift(settlement);
+      const newSettlements: SplitSettlement[] = [];
+      let allocatedCents = 0;
+
+      activePayers.forEach((pe, i) => {
+        const paidCents = toCents(pe.amount);
+        const isLast = i === activePayers.length - 1;
+        const debtCents = isLast
+          ? dShareCents - allocatedCents
+          : Math.round((dShareCents * paidCents) / totalExpenseCents);
+        if (debtCents <= 0) return;
+        allocatedCents += debtCents;
+
+        newSettlements.push({
+          id: `${groupSettlementId}_${i}`,
+          sessionId: session.sessionId,
+          fromMemberId: effectiveDebtorId,
+          toMemberId: pe.memberId,
+          amount: roundTo2Decimals(fromCents(debtCents)),
+          date: now,
+          notes: `Itemized expense: ${expense.title}`,
+          expenseId: expense.id,
+          recordedBy: {
+            memberId: currentMember?.id || 'member',
+            name: currentMember?.name || 'Member',
+          },
+          createdAt: now,
+        });
+      });
+
+      if (newSettlements.length === 0 && creditorId) {
+        newSettlements.push({
+          id: `${groupSettlementId}_0`,
+          sessionId: session.sessionId,
+          fromMemberId: effectiveDebtorId,
+          toMemberId: creditorId,
+          amount: split.amount,
+          date: now,
+          notes: `Itemized expense: ${expense.title}`,
+          expenseId: expense.id,
+          recordedBy: {
+            memberId: currentMember?.id || 'member',
+            name: currentMember?.name || 'Member',
+          },
+          createdAt: now,
+        });
+      }
+
+      updatedSettlements.unshift(...newSettlements);
 
       const auditLog: SplitAuditLog = {
         id: `log_${Date.now()}_stl_exp`,
@@ -1071,41 +1148,46 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       updatedAuditLogs.unshift(auditLog);
 
       if (authUser?.id) {
-        syncSettlementToCapFlowTransactions({
-          session,
-          settlement,
-          userId: authUser.id,
-        }).catch(() => {});
+        for (const s of newSettlements) {
+          syncSettlementToCapFlowTransactions({
+            session,
+            settlement: s,
+            userId: authUser.id,
+          }).catch(() => {});
+        }
       }
 
       // Single atomic backend call to create settlement & persist settled split
       if (typeof navigator === 'undefined' || navigator.onLine) {
         try {
-          const res = await fetch(
-            `/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(settlement),
+          let lastData: any = null;
+          for (const s of newSettlements) {
+            const res = await fetch(
+              `/api/splitter/sessions/${encodeURIComponent(sessionId)}/settlements`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(s),
+              }
+            );
+            if (res.ok) {
+              lastData = await res.json();
             }
-          );
-          if (res.ok) {
-            const data = await res.json();
-            if (data.session) {
-              lastKnownAuditLogId = data.session.auditLogs?.[0]?.id || null;
-              await db.splitSessions.where('sessionId').equals(sessionId).modify({
-                expenses: data.session.expenses,
-                settlements: data.session.settlements,
-                auditLogs: data.session.auditLogs,
-                updatedAt: data.session.updatedAt,
-              });
-              set((state) => ({
-                activeSession:
-                  state.activeSession?.sessionId === sessionId ? data.session : state.activeSession,
-                sessions: state.sessions.map((s) => (s.sessionId === sessionId ? data.session : s)),
-              }));
-              return;
-            }
+          }
+          if (lastData?.session) {
+            lastKnownAuditLogId = lastData.session.auditLogs?.[0]?.id || null;
+            await db.splitSessions.where('sessionId').equals(sessionId).modify({
+              expenses: lastData.session.expenses,
+              settlements: lastData.session.settlements,
+              auditLogs: lastData.session.auditLogs,
+              updatedAt: lastData.session.updatedAt,
+            });
+            set((state) => ({
+              activeSession:
+                state.activeSession?.sessionId === sessionId ? lastData.session : state.activeSession,
+              sessions: state.sessions.map((s) => (s.sessionId === sessionId ? lastData.session : s)),
+            }));
+            return;
           }
         } catch (e) {
           console.warn('[Splitter] Remote settlement failed:', e);
@@ -1117,19 +1199,16 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
       split.settledAt = undefined;
       split.settlementId = undefined;
 
-      if (targetSettlementId) {
-        updatedSettlements = updatedSettlements.filter((s) => s.id !== targetSettlementId);
-      } else {
-        const matchIdx = updatedSettlements.findIndex(
-          (s) =>
-            s.fromMemberId === effectiveDebtorId &&
-            s.toMemberId === creditorId &&
-            Math.abs(s.amount - split.amount) < 0.01 &&
-            (s.expenseId === expense.id || s.notes?.includes(expense.title))
-        );
-        if (matchIdx !== -1) {
-          updatedSettlements.splice(matchIdx, 1);
-        }
+      // Remove all settlements tied to this expense and member
+      updatedSettlements = updatedSettlements.filter(
+        (s) =>
+          !(s.expenseId === expense.id && s.fromMemberId === effectiveDebtorId) &&
+          !(targetSettlementId && (s.id === targetSettlementId || s.id.startsWith(targetSettlementId)))
+      );
+
+      const authUser = useAuthStore.getState().user;
+      if (authUser?.id && targetSettlementId) {
+        removeSyncedSettlementTransaction(sessionId, targetSettlementId, authUser.id).catch(() => {});
       }
 
       if (typeof navigator === 'undefined' || navigator.onLine) {
@@ -1140,9 +1219,8 @@ export const useSplitterStore = create<SplitterState>((set, get) => ({
               method: 'DELETE',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                settlementId: targetSettlementId,
                 expenseId: expense.id,
-                memberId,
+                memberId: effectiveDebtorId,
               }),
             }
           );

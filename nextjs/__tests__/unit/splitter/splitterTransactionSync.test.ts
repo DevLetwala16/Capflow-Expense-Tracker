@@ -2,6 +2,8 @@ import {
   syncExpenseToCapFlowTransactions,
   syncSettlementToCapFlowTransactions,
   removeSyncedExpenseTransaction,
+  removeSyncedSettlementTransaction,
+  removeAllSyncedSettlementsForSession,
 } from "@/lib/splitter/splitterTransactionSync";
 import { SplitSession, SplitExpenseItem } from "@/types/splitter";
 
@@ -292,5 +294,37 @@ describe("Splitter to CapFlow Transaction Synchronization", () => {
 
     expect(res).toBeNull();
     expect(mockAddTx).not.toHaveBeenCalled();
+  });
+
+  test("removeSyncedSettlementTransaction deletes the matching transaction", async () => {
+    mockTransactions.set(101, {
+      id: 101,
+      userId: "user-1",
+      notes: "[SplitterStl:session-xyz:stl_999] Repayment",
+    });
+
+    await removeSyncedSettlementTransaction("session-xyz", "stl_999", "user-1");
+
+    expect(mockDeleteTx).toHaveBeenCalledWith(101);
+    expect(mockLoadCumulativeBalance).toHaveBeenCalledWith("user-1");
+  });
+
+  test("removeAllSyncedSettlementsForSession removes all settlements for session", async () => {
+    mockTransactions.set(201, {
+      id: 201,
+      userId: "user-1",
+      notes: "[SplitterStl:session-xyz:stl_1] Payment 1",
+    });
+    mockTransactions.set(202, {
+      id: 202,
+      userId: "user-1",
+      notes: "[SplitterStl:session-xyz:stl_2] Payment 2",
+    });
+
+    await removeAllSyncedSettlementsForSession("session-xyz", "user-1");
+
+    expect(mockDeleteTx).toHaveBeenCalledWith(201);
+    expect(mockDeleteTx).toHaveBeenCalledWith(202);
+    expect(mockLoadCumulativeBalance).toHaveBeenCalledWith("user-1");
   });
 });

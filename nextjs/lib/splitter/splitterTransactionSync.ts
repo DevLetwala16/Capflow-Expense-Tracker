@@ -230,3 +230,56 @@ export async function removeSyncedExpenseTransaction(
     console.warn("Failed to remove synced expense transaction:", e);
   }
 }
+
+/**
+ * Deletes any synced CapFlow transaction when a settlement is deleted or undone
+ */
+export async function removeSyncedSettlementTransaction(
+  sessionId: string,
+  settlementId: string,
+  userId: string
+): Promise<void> {
+  if (!userId) return;
+  try {
+    const tag = `[SplitterStl:${sessionId}:${settlementId}]`;
+    const existingTx = await db.transactions
+      .where("userId")
+      .equals(userId)
+      .filter((tx) => !!tx.notes && tx.notes.includes(tag))
+      .first();
+
+    if (existingTx?.id) {
+      await useTransactionStore.getState().deleteTransaction(existingTx.id);
+      await useTransactionStore.getState().loadCumulativeBalance(userId);
+    }
+  } catch (e) {
+    console.warn("Failed to remove synced settlement transaction:", e);
+  }
+}
+
+/**
+ * Deletes all synced CapFlow transactions for a session when all settlements are purged
+ */
+export async function removeAllSyncedSettlementsForSession(
+  sessionId: string,
+  userId: string
+): Promise<void> {
+  if (!userId) return;
+  try {
+    const prefix = `[SplitterStl:${sessionId}:`;
+    const all = await db.transactions
+      .where("userId")
+      .equals(userId)
+      .filter((tx) => !!tx.notes && tx.notes.includes(prefix))
+      .toArray();
+
+    for (const tx of all) {
+      if (tx.id) {
+        await useTransactionStore.getState().deleteTransaction(tx.id);
+      }
+    }
+    await useTransactionStore.getState().loadCumulativeBalance(userId);
+  } catch (e) {
+    console.warn("Failed to remove all synced settlements for session:", e);
+  }
+}

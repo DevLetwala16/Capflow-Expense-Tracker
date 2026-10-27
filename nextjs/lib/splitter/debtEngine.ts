@@ -434,7 +434,12 @@ export function getPairwiseNetDebt(
   const cId = resolvePrimary(creditorId);
   if (dId === cId) return 0;
 
-  let balanceCents = 0; // Positive: dId owes cId. Negative: cId owes dId.
+  // Bug 3 Fix: Use a floating-point accumulator instead of Math.round() at each
+  // per-expense step. Rounding at every step introduced up to ±0.5-cent errors
+  // per expense that compounded across many expenses, causing real debts to
+  // appear as ₹0 and triggering a false "Auto-Adjusted ✓" settled badge.
+  // We accumulate at full float precision and round ONLY at the final output.
+  let balanceRaw = 0; // float cents — Positive: dId owes cId. Negative: cId owes dId.
 
   // 1. Scan expenses
   for (const exp of session.expenses || []) {
@@ -461,16 +466,14 @@ export function getPairwiseNetDebt(
       return resolvePrimary(s.memberId) === cId ? sum + toCents(s.amount) : sum;
     }, 0);
 
-    // How much of debtor's share was funded by creditor?
+    // How much of debtor's share was funded by creditor? (no Math.round — keep full precision)
     if (cPaidCents > 0 && dSplitCents > 0) {
-      const debtToC = Math.round((dSplitCents * cPaidCents) / totalExpCents);
-      balanceCents += debtToC;
+      balanceRaw += (dSplitCents * cPaidCents) / totalExpCents;
     }
 
     // How much of creditor's share was funded by debtor?
     if (dPaidCents > 0 && cSplitCents > 0) {
-      const debtToD = Math.round((cSplitCents * dPaidCents) / totalExpCents);
-      balanceCents -= debtToD;
+      balanceRaw -= (cSplitCents * dPaidCents) / totalExpCents;
     }
   }
 
@@ -482,14 +485,15 @@ export function getPairwiseNetDebt(
 
     if (fromId === dId && toId === cId) {
       // Debtor paid creditor
-      balanceCents -= stCents;
+      balanceRaw -= stCents;
     } else if (fromId === cId && toId === dId) {
       // Creditor paid debtor
-      balanceCents += stCents;
+      balanceRaw += stCents;
     }
   }
 
-  return fromCents(balanceCents);
+  // Round only once at the final step — preserves sub-cent accuracy throughout
+  return roundTo2Decimals(fromCents(balanceRaw));
 }
 
 export function getExpenseMemberStatus(
