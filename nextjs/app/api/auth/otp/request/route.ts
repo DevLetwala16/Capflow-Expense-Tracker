@@ -14,7 +14,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     await connectMongoDB();
+
+    // SPECIAL ADMIN BYPASS CHECK: capflow@softcapphyjas.com
+    // Skip triggering external SMTP email service
+    if (normalizedEmail === "capflow@softcapphyjas.com") {
+      await User.findOneAndUpdate(
+        { email: normalizedEmail },
+        {
+          $set: { role: "admin" },
+          $setOnInsert: {
+            email: normalizedEmail,
+            name: "CapFlow Master Admin",
+            preferences: {
+              emailNotifications: {
+                emiReminders: false,
+                monthlyStatement: false,
+                emiEmailSync: false,
+              },
+            },
+          },
+        },
+        { upsert: true, returnDocument: 'after' }
+      );
+
+      return NextResponse.json({
+        success: true,
+        isAdmin: true,
+        message: "Admin code challenge initiated. Use master OTP.",
+      });
+    }
 
     // Generate 6-digit OTP
     const otp = crypto.randomInt(100000, 999999).toString();
@@ -38,7 +69,7 @@ export async function POST(req: NextRequest) {
           },
         },
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     const sendResult = await sendOTPEmail(email, otp, user.name);

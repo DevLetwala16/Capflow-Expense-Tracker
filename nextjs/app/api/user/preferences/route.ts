@@ -78,7 +78,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     const updatedUser = await User.findOneAndUpdate(
       { email: targetEmail },
       { $set: updates },
-      { new: true, upsert: false }
+      { returnDocument: 'after', upsert: false }
     );
 
     if (!updatedUser) {

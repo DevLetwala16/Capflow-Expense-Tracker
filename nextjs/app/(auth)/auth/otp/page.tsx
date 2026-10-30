@@ -188,7 +188,8 @@ export default function OTPAuthPage() {
           localStorage.setItem("capflow_just_signed_in", "true");
         }
         setSuccess(true);
-        setTimeout(() => router.replace("/onboarding"), 900);
+        const destination = data.redirectUrl || (data.role === "admin" ? "/admin/dashboard" : "/onboarding");
+        setTimeout(() => router.replace(destination), 900);
       } else {
         setError("Invalid OTP code. Please check and try again.");
         setShake(true);

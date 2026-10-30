@@ -80,7 +80,7 @@ export async function PATCH(req: NextRequest) {
     const user = await User.findByIdAndUpdate(
       decoded.userId,
       { $set: updates },
-      { new: true }
+      { returnDocument: 'after' }
     ).select("-otpHash -otpExpiry");
 
     if (!user) {

@@ -5,6 +5,7 @@ export interface IUser extends Document {
   name: string;
   phone?: string;
   avatar?: string;
+  role?: 'user' | 'admin';
   paymentQrCode?: string;
   paymentQrPublicId?: string;
   upiId?: string;
@@ -28,6 +29,7 @@ const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, lowercase: true },
     name: { type: String, required: true },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
     phone: { type: String, default: "" },
     avatar: { type: String },
     paymentQrCode: { type: String },
