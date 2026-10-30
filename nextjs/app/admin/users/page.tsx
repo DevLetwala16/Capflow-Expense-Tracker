@@ -247,8 +247,94 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* ── User Table ───────────────────────────────────────────────── */}
-      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
+      {/* ── Mobile Phone View (Responsive Cards — Visible only on phones < 768px) ── */}
+      <div className="flex md:hidden flex-col gap-3">
+        {loading ? (
+          <div className="p-8 text-center text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)]">
+            <Loader2 size={24} className="animate-spin text-[#6366F1] mx-auto mb-2" />
+            <span className="text-xs">Loading user accounts...</span>
+          </div>
+        ) : users.length === 0 ? (
+          <div className="p-8 text-center text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)]">
+            <p className="text-xs">No registered users found matching your search.</p>
+          </div>
+        ) : (
+          users.map((user) => (
+            <div
+              key={user.id}
+              className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#6366F1]/15 text-[#6366F1] flex items-center justify-center font-extrabold text-sm shrink-0 overflow-hidden border border-[#6366F1]/20">
+                    {user.avatar ? (
+                      <Image src={user.avatar} alt={user.name} width={40} height={40} className="w-full h-full object-cover" />
+                    ) : (
+                      user.name ? user.name[0].toUpperCase() : "U"
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-bold text-[var(--text-primary)] text-sm flex items-center gap-1.5">
+                      <span>{user.name || "Unnamed User"}</span>
+                      {user.role === "admin" && <Shield size={12} className="text-[#10B981]" />}
+                    </div>
+                    <div className="text-[11px] text-[var(--text-secondary)] font-mono">{user.email}</div>
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                  user.role === "admin"
+                    ? "bg-[#10B981]/15 text-[#10B981]"
+                    : "bg-[var(--bg-card-hover)] text-[var(--text-secondary)]"
+                }`}>
+                  {user.role}
+                </span>
+              </div>
+
+              {/* Info chips */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2 rounded-xl bg-[var(--bg-card-hover)]">
+                  <span className="text-[10px] text-[var(--text-secondary)] block">Contact Phone:</span>
+                  <span className="font-mono text-[11px] text-[var(--text-primary)] font-medium">
+                    {user.phone || "Not set"}
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-[var(--bg-card-hover)]">
+                  <span className="text-[10px] text-[var(--text-secondary)] block">Shared Groups:</span>
+                  <span className="text-[11px] text-[var(--text-primary)] font-bold">
+                    {user.splitCount} session(s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-2 border-t border-[var(--border-color)]">
+                <button
+                  onClick={() => openUserDetails(user)}
+                  className="flex-1 py-2 rounded-xl bg-[var(--bg-card-hover)] hover:bg-[#6366F1]/10 text-xs font-bold text-[var(--text-primary)] hover:text-[#6366F1] transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Eye size={13} />
+                  <span>View Details</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setUserToDelete(user);
+                    setDeleteConfirmationText("");
+                    setActionMessage(null);
+                  }}
+                  disabled={user.email.toLowerCase() === "capflow@softcapphyjas.com"}
+                  className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors disabled:opacity-20"
+                  title="Delete"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ── Desktop Table View (Visible on screens >= 768px) ────────── */}
+      <div className="hidden md:block rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-[var(--bg-card-hover)] border-b border-[var(--border-color)] text-[var(--text-secondary)] uppercase text-[10px] tracking-wider font-bold">

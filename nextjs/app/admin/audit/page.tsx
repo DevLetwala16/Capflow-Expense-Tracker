@@ -206,8 +206,73 @@ export default function AdminAuditTrailPage() {
         </div>
       </div>
 
-      {/* ── Audit Table ───────────────────────────────────────────────── */}
-      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
+      {/* ── Mobile Card View (Visible on screens < 768px) ─────────────── */}
+      <div className="block md:hidden space-y-3">
+        {loading ? (
+          <div className="py-12 text-center text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)]">
+            <Loader2 size={24} className="animate-spin text-[#6366F1] mx-auto mb-2" />
+            <span>Loading audit ledger...</span>
+          </div>
+        ) : logs.length === 0 ? (
+          <div className="py-12 text-center text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)]">
+            No activity logs found matching the filter.
+          </div>
+        ) : (
+          logs.map((log) => {
+            const meta = getHumanActionInfo(log.action);
+            return (
+              <div
+                key={log.id}
+                className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${meta.badgeColor}`}>
+                    {meta.title}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-secondary)] font-mono">
+                    {new Date(log.createdAt).toLocaleString([], {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+
+                <div className="text-xs space-y-1">
+                  <div className="font-semibold text-[var(--text-primary)]">
+                    {log.details?.recipientEmail ||
+                      log.details?.deletedUserEmail ||
+                      (log.details?.ticketId ? `Ticket #${log.details.ticketId}` : log.targetType)}
+                  </div>
+                  {log.details?.subject && (
+                    <div className="text-[11px] text-[var(--text-secondary)] truncate">
+                      Subject: {log.details.subject}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-[var(--text-secondary)] pt-1 flex items-center justify-between">
+                    <span>Admin: <strong className="text-[var(--text-primary)] font-mono">{log.adminEmail}</strong></span>
+                    <span className="font-mono text-[10px]">{log.ipAddress}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[var(--border-color)]">
+                  <button
+                    onClick={() => setInspectedLog(log)}
+                    className="w-full py-2 rounded-xl bg-[var(--bg-card-hover)] hover:bg-[#6366F1]/10 text-[var(--text-primary)] hover:text-[#6366F1] transition-all text-xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye size={13} />
+                    <span>View Details</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* ── Desktop Table View (Visible on screens >= 768px) ────────── */}
+      <div className="hidden md:block rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-[var(--bg-card-hover)] border-b border-[var(--border-color)] text-[var(--text-secondary)] uppercase text-[10px] tracking-wider font-bold">
@@ -303,29 +368,29 @@ export default function AdminAuditTrailPage() {
             </tbody>
           </table>
         </div>
+      </div>
 
-        {/* ── Pagination Footer ─────────────────────────────────────────── */}
-        <div className="p-4 bg-[var(--bg-card)] border-t border-[var(--border-color)] flex items-center justify-between text-xs text-[var(--text-secondary)]">
-          <div>
-            Showing Page <strong className="text-[var(--text-primary)]">{page}</strong> of <strong className="text-[var(--text-primary)]">{totalPages}</strong> ({totalCount} entries)
-          </div>
+      {/* ── Pagination Bar (Visible on all screen sizes) ──────────────── */}
+      <div className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-between text-xs text-[var(--text-secondary)] shadow-sm">
+        <div>
+          Showing Page <strong className="text-[var(--text-primary)]">{page}</strong> of <strong className="text-[var(--text-primary)]">{totalPages}</strong> ({totalCount} entries)
+        </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="p-1.5 rounded-lg bg-[var(--bg-card-hover)] hover:bg-[var(--border-color)] disabled:opacity-30 disabled:pointer-events-none text-[var(--text-primary)]"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="p-1.5 rounded-lg bg-[var(--bg-card-hover)] hover:bg-[var(--border-color)] disabled:opacity-30 disabled:pointer-events-none text-[var(--text-primary)]"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="p-1.5 rounded-lg bg-[var(--bg-card-hover)] hover:bg-[var(--border-color)] disabled:opacity-30 disabled:pointer-events-none text-[var(--text-primary)]"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="p-1.5 rounded-lg bg-[var(--bg-card-hover)] hover:bg-[var(--border-color)] disabled:opacity-30 disabled:pointer-events-none text-[var(--text-primary)]"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 

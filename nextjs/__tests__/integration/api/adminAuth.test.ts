@@ -70,6 +70,7 @@ jest.mock("@/lib/mongodb/adminAuditLogModel", () => ({
   __esModule: true,
   default: {
     create: jest.fn().mockResolvedValue({}),
+    deleteMany: jest.fn().mockResolvedValue({}),
     find: jest.fn().mockReturnValue({
       sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -82,6 +83,7 @@ jest.mock("@/lib/mongodb/adminAuditLogModel", () => ({
 jest.mock("@/lib/mongodb/supportTicketModel", () => ({
   __esModule: true,
   default: {
+    deleteMany: jest.fn().mockResolvedValue({}),
     countDocuments: jest.fn().mockResolvedValue(3),
     find: jest.fn().mockReturnValue({
       sort: jest.fn().mockReturnThis(),

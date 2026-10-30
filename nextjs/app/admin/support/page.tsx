@@ -20,6 +20,8 @@ import {
   Tag,
   ArrowRight,
   MessageCircle,
+  Inbox,
+  Sparkles,
 } from "lucide-react";
 
 interface TicketItem {
@@ -165,14 +167,14 @@ export default function AdminSupportCRMPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-extrabold text-[var(--text-primary)] tracking-tight">
-              Customer Support & Inquiries
+              Customer Support Inquiries
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-[#F59E0B]/10 text-[#F59E0B] text-xs font-bold">
-              {totalCount} Total Inquiries
+              {totalCount} Total
             </span>
           </div>
           <p className="text-xs text-[var(--text-secondary)] mt-1">
-            Manage user support cases, reach customers via email or WhatsApp, and track problem resolution.
+            Real customer support inquiries. Contact users via verified email or WhatsApp and manage case workflow.
           </p>
         </div>
 
@@ -220,8 +222,8 @@ export default function AdminSupportCRMPage() {
         </div>
 
         {/* Status Filters */}
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <span className="text-xs text-[var(--text-secondary)] font-medium">Filter Status:</span>
+        <div className="flex flex-wrap items-center gap-1.5 self-start md:self-auto">
+          <span className="text-xs text-[var(--text-secondary)] font-medium mr-1">Status:</span>
           {(["all", "open", "in_progress", "resolved"] as const).map((s) => (
             <button
               key={s}
@@ -241,153 +243,248 @@ export default function AdminSupportCRMPage() {
         </div>
       </div>
 
-      {/* ── Ticket Feed & Inbox Table ─────────────────────────────────── */}
-      <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[var(--bg-card-hover)] border-b border-[var(--border-color)] text-[var(--text-secondary)] uppercase text-[10px] tracking-wider font-bold">
-              <tr>
-                <th className="py-3.5 px-5">Ticket & Subject</th>
-                <th className="py-3.5 px-4">Customer Contact</th>
-                <th className="py-3.5 px-4">Category</th>
-                <th className="py-3.5 px-4">Priority</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border-color)]">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-[var(--text-secondary)]">
-                    <Loader2 size={24} className="animate-spin text-[#6366F1] mx-auto mb-2" />
-                    <span>Loading customer cases...</span>
-                  </td>
-                </tr>
-              ) : tickets.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-[var(--text-secondary)]">
-                    No tickets found matching your selection.
-                  </td>
-                </tr>
-              ) : (
-                tickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-[var(--bg-card-hover)]/50 transition-colors">
-                    {/* Ticket ID & Subject */}
-                    <td className="py-3.5 px-5">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-[#6366F1]/15 text-[#6366F1] shrink-0 mt-0.5">
-                          <MessageSquare size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-mono text-[11px] text-[#6366F1] font-bold">
-                            #{ticket.ticketId}
-                          </div>
-                          <div className="font-bold text-[var(--text-primary)] truncate max-w-xs mt-0.5">
-                            {ticket.subject}
-                          </div>
-                          <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate max-w-xs">
-                            {ticket.latestMessage?.message || "No message body"}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Customer Contact: Email & Phone prominently displayed */}
-                    <td className="py-3.5 px-4">
-                      <div className="min-w-0">
-                        <div className="font-bold text-[var(--text-primary)] truncate">{ticket.userName}</div>
-                        <div className="text-[11px] text-[var(--text-secondary)] font-mono flex items-center gap-1.5 mt-0.5">
-                          <Mail size={11} className="shrink-0" />
-                          <span className="truncate">{ticket.userEmail}</span>
-                        </div>
-                        {ticket.userPhone ? (
-                          <div className="text-[11px] text-[#10B981] font-mono flex items-center gap-1.5 mt-0.5 font-bold">
-                            <Phone size={11} className="shrink-0" />
-                            <span>{ticket.userPhone}</span>
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-[var(--text-secondary)] italic mt-0.5">No phone recorded</div>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Category */}
-                    <td className="py-3.5 px-4">
-                      <span className="px-2.5 py-1 rounded-lg bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-[11px] text-[var(--text-primary)] font-medium whitespace-nowrap">
-                        {ticket.category}
-                      </span>
-                    </td>
-
-                    {/* Priority */}
-                    <td className="py-3.5 px-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        ticket.priority === "urgent"
-                          ? "bg-red-500/15 text-red-500"
-                          : ticket.priority === "high"
-                          ? "bg-[#F59E0B]/15 text-[#F59E0B]"
-                          : "bg-blue-500/15 text-blue-500"
-                      }`}>
-                        {ticket.priority}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-3.5 px-4">
-                      <select
-                        value={ticket.status}
-                        onChange={(e) => handleUpdateStatus(ticket.id, e.target.value)}
-                        className={`text-[11px] font-bold uppercase rounded-lg px-2.5 py-1 bg-[var(--bg-card-hover)] border border-[var(--border-color)] cursor-pointer focus:outline-none ${
-                          ticket.status === "open"
-                            ? "text-[#F59E0B]"
-                            : ticket.status === "in_progress"
-                            ? "text-blue-500"
-                            : "text-[#10B981]"
-                        }`}
-                      >
-                        <option value="open">Open</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                      </select>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {ticket.userPhone && (
-                          <a
-                            href={`https://wa.me/${ticket.userPhone.replace(/\D/g, "")}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2 rounded-xl bg-[#10B981]/15 text-[#10B981] hover:bg-[#10B981]/25 transition-colors"
-                            title="Chat with user on WhatsApp"
-                          >
-                            <MessageCircle size={15} />
-                          </a>
-                        )}
-
-                        <button
-                          onClick={() => openTicketDetail(ticket.id)}
-                          className="px-3 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1] text-[#6366F1] hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                        >
-                          <Send size={12} />
-                          <span>Reply via Email</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* ── Content View ─────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] py-16 text-center text-[var(--text-secondary)] shadow-sm">
+          <Loader2 size={26} className="animate-spin text-[#6366F1] mx-auto mb-2.5" />
+          <span className="text-xs font-medium">Checking customer support inbox...</span>
         </div>
-      </div>
+      ) : tickets.length === 0 ? (
+        /* Empty State */
+        <div className="rounded-2xl p-8 bg-[var(--bg-card)] border border-[var(--border-color)] text-center shadow-sm flex flex-col items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-[#6366F1]/10 text-[#6366F1] flex items-center justify-center mb-3">
+            <Inbox size={26} />
+          </div>
+          <h3 className="text-base font-bold text-[var(--text-primary)]">
+            No Support Inquiries Found
+          </h3>
+          <p className="text-xs text-[var(--text-secondary)] max-w-sm mt-1 leading-relaxed">
+            There are currently no support requests matching this filter. When users submit an inquiry from the CapFlow app or contact form, it will appear here in real time.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* ── Mobile Phone View (Responsive Cards — Visible only on phones < 768px) ── */}
+          <div className="flex md:hidden flex-col gap-3">
+            {tickets.map((ticket) => (
+              <div
+                key={ticket.id}
+                className="p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm flex flex-col gap-3"
+              >
+                {/* Header: ID, Category & Status */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-[#6366F1]">
+                      #{ticket.ticketId}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card-hover)] text-[10px] font-semibold text-[var(--text-secondary)]">
+                      {ticket.category}
+                    </span>
+                  </div>
+                  <select
+                    value={ticket.status}
+                    onChange={(e) => handleUpdateStatus(ticket.id, e.target.value)}
+                    className={`text-[10px] font-bold uppercase rounded-lg px-2 py-1 bg-[var(--bg-card-hover)] border border-[var(--border-color)] cursor-pointer focus:outline-none ${
+                      ticket.status === "open"
+                        ? "text-[#F59E0B]"
+                        : ticket.status === "in_progress"
+                        ? "text-blue-500"
+                        : "text-[#10B981]"
+                    }`}
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
+
+                {/* Subject & Preview */}
+                <div>
+                  <h4 className="text-sm font-bold text-[var(--text-primary)] leading-snug">
+                    {ticket.subject}
+                  </h4>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">
+                    {ticket.latestMessage?.message || "No message body"}
+                  </p>
+                </div>
+
+                {/* Customer Contact Card */}
+                <div className="p-2.5 rounded-xl bg-[var(--bg-card-hover)] text-xs flex flex-col gap-1">
+                  <div className="font-bold text-[var(--text-primary)]">{ticket.userName}</div>
+                  <div className="text-[11px] text-[var(--text-secondary)] font-mono flex items-center gap-1.5">
+                    <Mail size={11} className="shrink-0" />
+                    <span className="truncate">{ticket.userEmail}</span>
+                  </div>
+                  {ticket.userPhone ? (
+                    <div className="text-[11px] text-[#10B981] font-mono flex items-center gap-1.5 font-bold">
+                      <Phone size={11} className="shrink-0" />
+                      <span>{ticket.userPhone}</span>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-[var(--text-secondary)] italic">No phone provided</div>
+                  )}
+                </div>
+
+                {/* Mobile Actions */}
+                <div className="flex items-center gap-2 pt-1 border-t border-[var(--border-color)]">
+                  {ticket.userPhone && (
+                    <a
+                      href={`https://wa.me/${ticket.userPhone.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 py-2 rounded-xl bg-[#10B981]/15 text-[#10B981] text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <MessageCircle size={14} />
+                      <span>WhatsApp</span>
+                    </a>
+                  )}
+
+                  <button
+                    onClick={() => openTicketDetail(ticket.id)}
+                    className="flex-1 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Send size={13} />
+                    <span>Reply via Email</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Desktop Table View (Visible on screens >= 768px) ────────── */}
+          <div className="hidden md:block rounded-2xl bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[var(--bg-card-hover)] border-b border-[var(--border-color)] text-[var(--text-secondary)] uppercase text-[10px] tracking-wider font-bold">
+                  <tr>
+                    <th className="py-3.5 px-5">Ticket & Subject</th>
+                    <th className="py-3.5 px-4">Customer Contact</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4">Priority</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-color)]">
+                  {tickets.map((ticket) => (
+                    <tr key={ticket.id} className="hover:bg-[var(--bg-card-hover)]/50 transition-colors">
+                      {/* Ticket ID & Subject */}
+                      <td className="py-3.5 px-5">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-xl bg-[#6366F1]/15 text-[#6366F1] shrink-0 mt-0.5">
+                            <MessageSquare size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-mono text-[11px] text-[#6366F1] font-bold">
+                              #{ticket.ticketId}
+                            </div>
+                            <div className="font-bold text-[var(--text-primary)] truncate max-w-xs mt-0.5">
+                              {ticket.subject}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-secondary)] mt-0.5 truncate max-w-xs">
+                              {ticket.latestMessage?.message || "No message body"}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Customer Contact */}
+                      <td className="py-3.5 px-4">
+                        <div className="min-w-0">
+                          <div className="font-bold text-[var(--text-primary)] truncate">{ticket.userName}</div>
+                          <div className="text-[11px] text-[var(--text-secondary)] font-mono flex items-center gap-1.5 mt-0.5">
+                            <Mail size={11} className="shrink-0" />
+                            <span className="truncate">{ticket.userEmail}</span>
+                          </div>
+                          {ticket.userPhone ? (
+                            <div className="text-[11px] text-[#10B981] font-mono flex items-center gap-1.5 mt-0.5 font-bold">
+                              <Phone size={11} className="shrink-0" />
+                              <span>{ticket.userPhone}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-[var(--text-secondary)] italic mt-0.5">No phone recorded</div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-1 rounded-lg bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-[11px] text-[var(--text-primary)] font-medium whitespace-nowrap">
+                          {ticket.category}
+                        </span>
+                      </td>
+
+                      {/* Priority */}
+                      <td className="py-3.5 px-4">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          ticket.priority === "urgent"
+                            ? "bg-red-500/15 text-red-500"
+                            : ticket.priority === "high"
+                            ? "bg-[#F59E0B]/15 text-[#F59E0B]"
+                            : "bg-blue-500/15 text-blue-500"
+                        }`}>
+                          {ticket.priority}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3.5 px-4">
+                        <select
+                          value={ticket.status}
+                          onChange={(e) => handleUpdateStatus(ticket.id, e.target.value)}
+                          className={`text-[11px] font-bold uppercase rounded-lg px-2.5 py-1 bg-[var(--bg-card-hover)] border border-[var(--border-color)] cursor-pointer focus:outline-none ${
+                            ticket.status === "open"
+                              ? "text-[#F59E0B]"
+                              : ticket.status === "in_progress"
+                              ? "text-blue-500"
+                              : "text-[#10B981]"
+                          }`}
+                        >
+                          <option value="open">Open</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {ticket.userPhone && (
+                            <a
+                              href={`https://wa.me/${ticket.userPhone.replace(/\D/g, "")}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-2 rounded-xl bg-[#10B981]/15 text-[#10B981] hover:bg-[#10B981]/25 transition-colors"
+                              title="Chat with user on WhatsApp"
+                            >
+                              <MessageCircle size={15} />
+                            </a>
+                          )}
+
+                          <button
+                            onClick={() => openTicketDetail(ticket.id)}
+                            className="px-3 py-1.5 rounded-xl bg-[#6366F1]/10 hover:bg-[#6366F1] text-[#6366F1] hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Send size={12} />
+                            <span>Reply via Email</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── Reply / Case Management Drawer Modal ──────────────────────── */}
       {activeTicketId && activeTicket && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 shadow-2xl max-h-[92vh] flex flex-col justify-between">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-2xl bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-5 sm:p-6 shadow-2xl max-h-[90vh] flex flex-col justify-between">
             {/* Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-[var(--border-color)]">
+            <div className="flex items-start justify-between pb-3.5 border-b border-[var(--border-color)]">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-[#6366F1]">
@@ -403,11 +500,11 @@ export default function AdminSupportCRMPage() {
                     {activeTicket.status.replace("_", " ")}
                   </span>
                 </div>
-                <h3 className="text-base font-extrabold text-[var(--text-primary)] mt-1">{activeTicket.subject}</h3>
-                <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-[var(--text-secondary)]">
+                <h3 className="text-sm sm:text-base font-extrabold text-[var(--text-primary)] mt-1">{activeTicket.subject}</h3>
+                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-[var(--text-secondary)]">
                   <span>Customer: <strong className="text-[var(--text-primary)]">{activeTicket.userName}</strong></span>
                   <span>&bull;</span>
-                  <span className="font-mono text-[var(--text-primary)]">{activeTicket.userEmail}</span>
+                  <span className="font-mono text-[var(--text-primary)] truncate max-w-[180px]">{activeTicket.userEmail}</span>
                   {activeTicket.userPhone && (
                     <>
                       <span>&bull;</span>
@@ -422,20 +519,20 @@ export default function AdminSupportCRMPage() {
                   setActiveTicketId(null);
                   setActiveTicket(null);
                 }}
-                className="p-2 rounded-xl bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                className="p-1.5 rounded-xl bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
             {/* Conversation History */}
-            <div className="my-4 flex-1 overflow-y-auto space-y-3.5 pr-2 max-h-[340px]">
+            <div className="my-3 flex-1 overflow-y-auto space-y-3 pr-1 max-h-[300px]">
               {activeTicket.messages?.map((msg: any, idx: number) => {
                 const isAdmin = msg.sender === "admin";
                 return (
                   <div
                     key={idx}
-                    className={`p-4 rounded-2xl text-xs max-w-[85%] ${
+                    className={`p-3.5 rounded-2xl text-xs max-w-[90%] sm:max-w-[85%] ${
                       isAdmin
                         ? "ml-auto bg-[#6366F1]/10 border border-[#6366F1]/20 text-[var(--text-primary)]"
                         : "mr-auto bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-[var(--text-primary)]"
@@ -456,19 +553,19 @@ export default function AdminSupportCRMPage() {
             </div>
 
             {/* Quick Email Reply Composer */}
-            <form onSubmit={handleSendReply} className="pt-4 border-t border-[var(--border-color)] flex flex-col gap-3">
-              <div className="flex items-center justify-between">
+            <form onSubmit={handleSendReply} className="pt-3 border-t border-[var(--border-color)] flex flex-col gap-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                 <label className="text-xs font-bold text-[var(--text-primary)] flex items-center gap-1.5">
                   <Mail size={13} className="text-[#6366F1]" />
                   <span>Send Reply via Email to {activeTicket.userEmail}</span>
                 </label>
 
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-[var(--text-secondary)]">After sending, mark as:</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[var(--text-secondary)] text-[11px]">Mark as:</span>
                   <select
                     value={statusAfterReply}
                     onChange={(e: any) => setStatusAfterReply(e.target.value)}
-                    className="px-2.5 py-1 rounded-lg bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] focus:outline-none"
+                    className="px-2 py-0.5 rounded-lg bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] focus:outline-none"
                   >
                     <option value="resolved">Resolved</option>
                     <option value="in_progress">In Progress</option>
@@ -481,16 +578,16 @@ export default function AdminSupportCRMPage() {
                 rows={3}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                placeholder="Type your response to the customer... It will be sent directly to their email address."
+                placeholder="Type your response to the customer... It will be emailed directly to them."
                 required
                 className="w-full p-3 rounded-xl bg-[var(--bg-card-hover)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:border-[#6366F1] transition-colors"
               />
 
-              <div className="flex items-center justify-end gap-3">
+              <div className="flex items-center justify-end">
                 <button
                   type="submit"
                   disabled={replying || !replyText.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-50 disabled:pointer-events-none text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+                  className="w-full sm:w-auto px-5 py-2 rounded-xl bg-[#6366F1] hover:bg-[#4F46E5] disabled:opacity-50 disabled:pointer-events-none text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
                 >
                   {replying ? (
                     <>

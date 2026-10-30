@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { connectMongoDB } from "@/lib/mongodb/connection";
+import SupportTicket from "@/lib/mongodb/supportTicketModel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type FeedbackCategory = "bug" | "feature" | "general";
@@ -426,6 +428,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       } catch (autoErr) {
         console.warn(`[Feedback] Auto-responder delivery warning:`, autoErr);
       }
+    }
+
+    // 4c. Persist ticket in MongoDB for Admin CRM Support Tracking
+    try {
+      await connectMongoDB();
+      const count = await SupportTicket.countDocuments();
+      const ticketId = `TCK-${1000 + count + 1}`;
+      await SupportTicket.create({
+        ticketId,
+        userEmail: (userEmail?.trim() || "anonymous@capflow.app").toLowerCase(),
+        userName: safeName,
+        userPhone: "",
+        subject: safeSubject,
+        category: safeCategory === "bug" ? "Bug Report" : "General",
+        priority: safeCategory === "bug" ? "high" : "medium",
+        status: "open",
+        lastRepliedBy: "user",
+        messages: [
+          {
+            sender: "user",
+            senderEmail: (userEmail?.trim() || "anonymous@capflow.app").toLowerCase(),
+            senderName: safeName,
+            message: safeMessage,
+            createdAt: new Date(),
+          },
+        ],
+      });
+      console.info(`[Feedback] Auto-recorded SupportTicket #${ticketId} in Admin CRM`);
+    } catch (dbErr) {
+      console.warn(`[Feedback] Non-critical warning: Failed to record SupportTicket in MongoDB:`, dbErr);
     }
 
     // 5. Success response

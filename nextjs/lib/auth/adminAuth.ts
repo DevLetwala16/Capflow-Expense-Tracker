@@ -198,120 +198,19 @@ export async function logAdminAction(params: {
   }
 }
 
-// ─── Initial Support Tickets & Audit Seeder ───────────────────────────────────
+// ─── Initial Data Cleaner (Ensures no dummy / fake data is stored) ────────────
 
 export async function seedInitialAdminDataIfEmpty(): Promise<void> {
   try {
-    const ticketCount = await SupportTicket.countDocuments();
-    if (ticketCount === 0) {
-      await SupportTicket.insertMany([
-        {
-          ticketId: "TCK-1001",
-          userEmail: "rahul.sharma@example.com",
-          userName: "Rahul Sharma",
-          userPhone: "+91 98201 12345",
-          subject: "HDFC Car Loan EMI reminder notification not delivered",
-          category: "EMI & Reminders",
-          priority: "high",
-          status: "open",
-          lastRepliedBy: "user",
-          messages: [
-            {
-              sender: "user",
-              senderEmail: "rahul.sharma@example.com",
-              senderName: "Rahul Sharma",
-              message:
-                "Hi CapFlow support, my monthly EMI of ₹18,500 was due yesterday but I didn't receive the push reminder or email summary on my phone. Could you check my account settings?",
-              createdAt: new Date(Date.now() - 2 * 3600 * 1000),
-            },
-          ],
-        },
-        {
-          ticketId: "TCK-1002",
-          userEmail: "ananya.patel@example.com",
-          userName: "Ananya Patel",
-          userPhone: "+91 98450 67890",
-          subject: "Goa Trip Split session settlement QR code scanning timeout",
-          category: "Splitter & Groups",
-          priority: "urgent",
-          status: "in_progress",
-          lastRepliedBy: "admin",
-          messages: [
-            {
-              sender: "user",
-              senderEmail: "ananya.patel@example.com",
-              senderName: "Ananya Patel",
-              message:
-                "When I try to scan the UPI QR code generated in our Goa Trip session, the scanner fails to lock focus in low light.",
-              createdAt: new Date(Date.now() - 5 * 3600 * 1000),
-            },
-            {
-              sender: "admin",
-              senderEmail: ADMIN_EMAIL,
-              senderName: "CapFlow Support",
-              message:
-                "Hello Ananya, we have optimized the contrast matrix in the QR scanner component and enabled manual camera torch assist. Please try refreshing.",
-              createdAt: new Date(Date.now() - 3 * 3600 * 1000),
-            },
-          ],
-        },
-        {
-          ticketId: "TCK-1003",
-          userEmail: "vikram.mehta@example.com",
-          userName: "Vikram Mehta",
-          userPhone: "+91 97110 54321",
-          subject: "Requesting export of custom date range financial statement",
-          category: "Transactions & Analytics",
-          priority: "medium",
-          status: "resolved",
-          lastRepliedBy: "admin",
-          resolvedAt: new Date(Date.now() - 12 * 3600 * 1000),
-          messages: [
-            {
-              sender: "user",
-              senderEmail: "vikram.mehta@example.com",
-              senderName: "Vikram Mehta",
-              message:
-                "Is it possible to download an itemized PDF statement for Q2 2026? Thanks!",
-              createdAt: new Date(Date.now() - 24 * 3600 * 1000),
-            },
-            {
-              sender: "admin",
-              senderEmail: ADMIN_EMAIL,
-              senderName: "CapFlow Support",
-              message:
-                "Hi Vikram, you can now generate custom PDF statements directly from Transactions > Statement Sheet with full category breakdown.",
-              createdAt: new Date(Date.now() - 12 * 3600 * 1000),
-            },
-          ],
-        },
-      ]);
-    }
-
-    const auditCount = await AdminAuditLog.countDocuments();
-    if (auditCount === 0) {
-      await AdminAuditLog.insertMany([
-        {
-          action: "ADMIN_LOGIN",
-          adminEmail: ADMIN_EMAIL,
-          targetType: "Auth",
-          details: { method: "Master OTP Bypass (100283)" },
-          ipAddress: "127.0.0.1",
-          userAgent: "CapFlow System Initialization",
-          createdAt: new Date(Date.now() - 24 * 3600 * 1000),
-        },
-        {
-          action: "SYSTEM_CONFIG_UPDATED",
-          adminEmail: ADMIN_EMAIL,
-          targetType: "System",
-          details: { description: "Verified MongoDB Atlas connection & Render Analytics endpoint" },
-          ipAddress: "127.0.0.1",
-          userAgent: "CapFlow System Initialization",
-          createdAt: new Date(Date.now() - 23 * 3600 * 1000),
-        },
-      ]);
-    }
+    // Purge any previously seeded mock / dummy tickets
+    await SupportTicket.deleteMany({
+      ticketId: { $in: ["TCK-1001", "TCK-1002", "TCK-1003"] },
+    });
+    // Purge any mock system initialization audit logs
+    await AdminAuditLog.deleteMany({
+      userAgent: "CapFlow System Initialization",
+    });
   } catch (err) {
-    console.warn("[AdminSeeder] Seeding skipped or error:", err);
+    console.warn("[AdminCleaner] Cleanup error or skipped:", err);
   }
 }
